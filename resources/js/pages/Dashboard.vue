@@ -1,22 +1,12 @@
 <script setup lang="ts">
-import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
-import Bubble from '@/components/ai-elements/Bubble.vue';
-import Message from '@/components/ai-elements/Message.vue';
-import PromptInput from '@/components/ai-elements/PromptInput.vue';
-import SuggestionBar from '@/components/ai-elements/SuggestionBar.vue';
-import Trace from '@/components/ai-elements/Trace.vue';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import type { GenerationUpdatedBroadcastPayload } from '@/composables/useGenerationRealtime';
-import { setLiveWallet, useWalletState } from '@/composables/useWalletState';
-import AppLayout from '@/layouts/AppLayout.vue';
-import { getEcho } from '@/lib/echo';
-import { imageAspectClass } from '@/lib/generation';
-import { calculateLiveEstimate, formatUsdDisplay } from '@/lib/pricing';
-import type { BreadcrumbItem, Generation, PricingConfig, SharedData } from '@/types';
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import {
+    computed,
+    nextTick,
+    onBeforeUnmount,
+    onMounted,
+    ref,
+    watch
+} from 'vue';
 import {
     AlertCircle,
     ArrowRight,
@@ -28,7 +18,24 @@ import {
     ShieldAlert,
     Sparkles,
 } from 'lucide-vue-next';
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { getEcho } from '@/lib/echo';
+import { imageAspectClass } from '@/lib/generation';
+import { calculateLiveEstimate, formatUsdDisplay } from '@/lib/pricing';
+import { setLiveWallet, useWalletState } from '@/composables/useWalletState';
+import type { BreadcrumbItem, Generation, PricingConfig, SharedData } from '@/types';
+import type { GenerationUpdatedBroadcastPayload } from '@/composables/useGenerationRealtime';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import Trace from '@/components/ai-elements/Trace.vue';
+import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
+import Bubble from '@/components/ai-elements/Bubble.vue';
+import Message from '@/components/ai-elements/Message.vue';
+import PromptInput from '@/components/ai-elements/PromptInput.vue';
+import SuggestionBar from '@/components/ai-elements/SuggestionBar.vue';
+import AppLayout from '@/layouts/AppLayout.vue';
 
 const props = defineProps<{
     pricing_config: PricingConfig | null;
