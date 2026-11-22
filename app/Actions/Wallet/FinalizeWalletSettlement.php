@@ -5,6 +5,7 @@ namespace App\Actions\Wallet;
 use App\Enums\WalletTransactionType;
 use App\Models\Generation;
 use App\Models\WalletTransaction;
+use App\Support\Money;
 use Illuminate\Support\Facades\DB;
 
 class FinalizeWalletSettlement
@@ -23,15 +24,18 @@ class FinalizeWalletSettlement
     public function handle(
         Generation $generation,
         WalletTransactionType $type,
-        int $actualProviderCostNano,
-        int $actualUserCostNano,
+        int|float|string $actualProviderCostNano,
+        int|float|string $actualUserCostNano,
         string $description,
     ): ?WalletTransaction {
+        $providerCost = Money::normalizeNano($actualProviderCostNano);
+        $userCost = Money::normalizeNano($actualUserCostNano);
+
         $transaction = DB::transaction(function () use (
             $generation,
             $type,
-            $actualProviderCostNano,
-            $actualUserCostNano,
+            $providerCost,
+            $userCost,
             $description,
         ): ?WalletTransaction {
             $lockedWallet = $this->lockUserWallet->handle((int) $generation->user_id);
@@ -44,16 +48,18 @@ class FinalizeWalletSettlement
                 return null;
             }
 
-            $reserved = (int) $lockedGeneration->reserved_user_cost_nano;
-            $refundNano = $reserved - $actualUserCostNano;
+            $reserved = Money::normalizeNano($lockedGeneration->reserved_user_cost_nano ?? 0);
+            $refundNano = Money::sub($reserved, $userCost);
 
-            $lockedWallet->balance_nanodollars += $refundNano;
-            $lockedWallet->reserved_nanodollars = max(0, (int) $lockedWallet->reserved_nanodollars - $reserved);
+            $lockedWallet->balance_nanodollars = Money::add($lockedWallet->balance_nanodollars ?? 0, $refundNano);
+            $lockedWallet->reserved_nanodollars = Money::maxZero(
+                Money::sub($lockedWallet->reserved_nanodollars ?? 0, $reserved),
+            );
             $lockedWallet->save();
 
             $lockedGeneration->reserved_user_cost_nano = 0;
-            $lockedGeneration->actual_provider_cost_nano = $actualProviderCostNano;
-            $lockedGeneration->actual_user_cost_nano = $actualUserCostNano;
+            $lockedGeneration->actual_provider_cost_nano = Money::toIntOrString($providerCost);
+            $lockedGeneration->actual_user_cost_nano = Money::toIntOrString($userCost);
             $lockedGeneration->settled_at = now();
             $lockedGeneration->save();
 

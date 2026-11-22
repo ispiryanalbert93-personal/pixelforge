@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\NanodollarCast;
 use App\Support\Money;
 use Database\Factories\WalletFactory;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -36,8 +37,8 @@ class Wallet extends Model
     protected function casts(): array
     {
         return [
-            'balance_nanodollars' => 'integer',
-            'reserved_nanodollars' => 'integer',
+            'balance_nanodollars' => NanodollarCast::class,
+            'reserved_nanodollars' => NanodollarCast::class,
         ];
     }
 
@@ -47,7 +48,7 @@ class Wallet extends Model
     protected function balanceUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->balance_nanodollars),
+            fn (): string => Money::nanoToUsd($this->balance_nanodollars ?? 0),
         );
     }
 
@@ -57,7 +58,7 @@ class Wallet extends Model
     protected function reservedUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->reserved_nanodollars),
+            fn (): string => Money::nanoToUsd($this->reserved_nanodollars ?? 0),
         );
     }
 

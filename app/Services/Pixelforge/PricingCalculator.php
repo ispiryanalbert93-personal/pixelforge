@@ -173,7 +173,7 @@ final class PricingCalculator
         );
 
         $userCostNano = Money::applyMarkup($providerCostNano, $markupPercent);
-        $profitNano = $userCostNano - $providerCostNano;
+        $profitNano = Money::sub($userCostNano, $providerCostNano);
 
         return new ActualCostBreakdown(
             inputTextTokens: $inputTextTokens,
@@ -259,7 +259,7 @@ final class PricingCalculator
         int $outputTokens,
         int $reasoningTokens,
         array $rates,
-    ): int {
+    ): int|string {
         $tokenGroups = [
             'input_text_tokens' => $inputTextTokens,
             'input_image_tokens' => $inputImageTokens,
@@ -279,6 +279,6 @@ final class PricingCalculator
             $totalNano = bcadd($totalNano, $groupCost, 6);
         }
 
-        return (int) bcround($totalNano, 0, RoundingMode::HalfAwayFromZero);
+        return Money::toIntOrString(bcround($totalNano, 0, RoundingMode::HalfAwayFromZero));
     }
 }

@@ -73,4 +73,16 @@ class MoneyTest extends TestCase
         $this->assertSame('-$0.0577', Money::formatDisplay(-57_656_250));
         $this->assertSame('$0.00', Money::formatDisplay(-1));
     }
+
+    public function test_string_and_float_nanodollars_preserve_exact_32bit_wasm_precision(): void
+    {
+        $this->assertSame('25000000000', Money::normalizeNano(25_000_000_000.0));
+        $this->assertSame('25000000000', Money::normalizeNano('0025000000000'));
+        $this->assertSame('25.000000000', Money::nanoToUsd('25000000000'));
+        $this->assertSame('$25.00', Money::formatDisplay(25_000_000_000.0));
+        $this->assertSame(1_000_000_000_000, Money::add('999000000000', '1000000000'));
+        $this->assertSame(24_942_356_250, Money::sub('25000000000', '57643750'));
+        $this->assertSame(1, Money::compare('25000000000', '3000000000'));
+        $this->assertSame(0, Money::maxZero('-500'));
+    }
 }

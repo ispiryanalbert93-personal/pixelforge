@@ -256,4 +256,23 @@ class WalletActionsTest extends TestCase
         $this->assertSame(1, $user->walletTransactions()->where('type', WalletTransactionType::Charge)->count());
         $this->assertSame(1, $user->walletTransactions()->where('type', WalletTransactionType::Release)->count());
     }
+
+    public function test_wallet_actions_handle_float_and_string_nanodollars_for_32bit_runtimes(): void
+    {
+        $user = User::factory()->create();
+
+        // Simulate 32-bit PHP float literal / numeric string > 2^31 - 1 ($25.00 + $10.00)
+        $this->topUpWallet->handle($user, 25_000_000_000.0, 'Float top-up');
+        $this->topUpWallet->handle($user, '10000000000', 'String top-up');
+
+        $this->assertSame('35.000000000', $user->fresh()->wallet->balance_usd);
+
+        $generation = Generation::factory()->for($user)->create();
+        $this->holdWalletFunds->handle($user, $generation, 3_000_000_000.0);
+        $this->settleWalletCharge->handle($generation, '2000000000', '2500000000');
+
+        $freshWallet = $user->fresh()->wallet;
+        $this->assertSame('32.500000000', $freshWallet->balance_usd);
+        $this->assertSame('0.000000000', $freshWallet->reserved_usd);
+    }
 }

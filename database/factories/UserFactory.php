@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use App\Models\User;
+use App\Support\Money;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -57,7 +58,7 @@ class UserFactory extends Factory
     /**
      * Seed the user's wallet with an initial available balance in nanodollars.
      */
-    public function withBalance(int $nano): static
+    public function withBalance(int|float|string $nano): static
     {
         return $this->withWallet($nano);
     }
@@ -65,13 +66,13 @@ class UserFactory extends Factory
     /**
      * Seed the user's wallet with explicit available and reserved nanodollar balances.
      */
-    public function withWallet(int $balanceNano = 0, int $reservedNano = 0): static
+    public function withWallet(int|float|string $balanceNano = 0, int|float|string $reservedNano = 0): static
     {
         return $this->afterCreating(function (User $user) use ($balanceNano, $reservedNano): void {
             $wallet = $user->wallet()->firstOrCreate();
             $wallet->forceFill([
-                'balance_nanodollars' => $balanceNano,
-                'reserved_nanodollars' => $reservedNano,
+                'balance_nanodollars' => Money::toIntOrString($balanceNano),
+                'reserved_nanodollars' => Money::toIntOrString($reservedNano),
             ])->save();
         });
     }

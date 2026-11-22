@@ -17,6 +17,7 @@ use App\Models\Generation;
 use App\Models\User;
 use App\Models\Wallet;
 use App\Models\WalletTransaction;
+use App\Support\Money;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -141,7 +142,7 @@ class GenerationService
     public function updateFromProvider(
         Generation $generation,
         array $data,
-        ?int $recalculatedMaxCostNano = null,
+        int|string|null $recalculatedMaxCostNano = null,
     ): Generation {
         [$updated, $shouldBroadcast] = $this->lockGeneration->handle(
             $generation,
@@ -302,7 +303,7 @@ class GenerationService
     /**
      * @param  array<string, mixed>  $response
      */
-    private function handleRateDrift(Generation $generation, array $response): ?int
+    private function handleRateDrift(Generation $generation, array $response): int|string|null
     {
         $responseRates = $response['rates'] ?? null;
 
@@ -343,7 +344,7 @@ class GenerationService
         Generation $locked,
         Wallet $lockedWallet,
         array $data,
-        ?int $recalculatedMaxCostNano,
+        int|string|null $recalculatedMaxCostNano,
     ): void {
         if (is_array($data['rates'] ?? null) && $data['rates'] !== []) {
             $locked->locked_rates = $data['rates'];
@@ -353,15 +354,15 @@ class GenerationService
             return;
         }
 
-        $currentReserved = (int) $locked->reserved_user_cost_nano;
-        if ($recalculatedMaxCostNano <= $currentReserved) {
+        $currentReserved = Money::normalizeNano($locked->reserved_user_cost_nano ?? 0);
+        if (Money::compare($recalculatedMaxCostNano, $currentReserved) <= 0) {
             return;
         }
 
-        $delta = $recalculatedMaxCostNano - $currentReserved;
-        $locked->estimated_max_user_cost_nano = $recalculatedMaxCostNano;
+        $delta = Money::sub($recalculatedMaxCostNano, $currentReserved);
+        $locked->estimated_max_user_cost_nano = Money::toIntOrString($recalculatedMaxCostNano);
 
-        if ((int) $lockedWallet->balance_nanodollars < $delta) {
+        if (Money::compare($lockedWallet->balance_nanodollars ?? 0, $delta) < 0) {
             Log::warning('Insufficient wallet balance to cover mid-flight Pixelforge rate increase hold delta.', [
                 'generation_id' => $locked->id,
                 'delta_nano' => $delta,
@@ -371,18 +372,18 @@ class GenerationService
             return;
         }
 
-        $lockedWallet->balance_nanodollars -= $delta;
-        $lockedWallet->reserved_nanodollars += $delta;
+        $lockedWallet->balance_nanodollars = Money::sub($lockedWallet->balance_nanodollars ?? 0, $delta);
+        $lockedWallet->reserved_nanodollars = Money::add($lockedWallet->reserved_nanodollars ?? 0, $delta);
         $lockedWallet->save();
 
-        $locked->reserved_user_cost_nano = $recalculatedMaxCostNano;
+        $locked->reserved_user_cost_nano = Money::toIntOrString($recalculatedMaxCostNano);
 
         WalletTransaction::create([
             'user_id' => $lockedWallet->user_id,
             'wallet_id' => $lockedWallet->id,
             'generation_id' => $locked->id,
             'type' => WalletTransactionType::Hold,
-            'amount_nanodollars' => -$delta,
+            'amount_nanodollars' => Money::negate($delta),
             'balance_after_nanodollars' => $lockedWallet->balance_nanodollars,
             'reserved_after_nanodollars' => $lockedWallet->reserved_nanodollars,
             'description' => "Rate adjustment hold for generation {$locked->id}",

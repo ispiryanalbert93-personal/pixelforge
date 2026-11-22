@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\NanodollarCast;
 use App\Enums\GenerationStatus;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
@@ -83,12 +84,12 @@ class Generation extends Model
             'reference_images' => 'array',
             'locked_rates' => 'array',
             'usage' => 'array',
-            'estimated_min_user_cost_nano' => 'integer',
-            'estimated_user_cost_nano' => 'integer',
-            'estimated_max_user_cost_nano' => 'integer',
-            'reserved_user_cost_nano' => 'integer',
-            'actual_provider_cost_nano' => 'integer',
-            'actual_user_cost_nano' => 'integer',
+            'estimated_min_user_cost_nano' => NanodollarCast::class,
+            'estimated_user_cost_nano' => NanodollarCast::class,
+            'estimated_max_user_cost_nano' => NanodollarCast::class,
+            'reserved_user_cost_nano' => NanodollarCast::class,
+            'actual_provider_cost_nano' => NanodollarCast::class,
+            'actual_user_cost_nano' => NanodollarCast::class,
             'settled_at' => 'datetime',
             'image_url_expires_at' => 'datetime',
             'completed_at' => 'datetime',
@@ -101,7 +102,7 @@ class Generation extends Model
     protected function estimatedUserCostUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->estimated_user_cost_nano),
+            fn (): string => Money::nanoToUsd($this->estimated_user_cost_nano ?? 0),
         );
     }
 
@@ -112,7 +113,7 @@ class Generation extends Model
     {
         return Attribute::get(
             fn (): ?string => $this->actual_user_cost_nano !== null
-                ? Money::nanoToUsd((int) $this->actual_user_cost_nano)
+                ? Money::nanoToUsd($this->actual_user_cost_nano)
                 : null,
         );
     }
@@ -124,7 +125,7 @@ class Generation extends Model
     {
         return Attribute::get(
             fn (): ?string => $this->actual_provider_cost_nano !== null
-                ? Money::nanoToUsd((int) $this->actual_provider_cost_nano)
+                ? Money::nanoToUsd($this->actual_provider_cost_nano)
                 : null,
         );
     }

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\NanodollarCast;
 use App\Enums\WalletTransactionType;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Casts\Attribute;
@@ -36,9 +37,9 @@ class WalletTransaction extends Model
     {
         return [
             'type' => WalletTransactionType::class,
-            'amount_nanodollars' => 'integer',
-            'balance_after_nanodollars' => 'integer',
-            'reserved_after_nanodollars' => 'integer',
+            'amount_nanodollars' => NanodollarCast::class,
+            'balance_after_nanodollars' => NanodollarCast::class,
+            'reserved_after_nanodollars' => NanodollarCast::class,
         ];
     }
 
@@ -48,7 +49,7 @@ class WalletTransaction extends Model
     protected function amountUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->amount_nanodollars),
+            fn (): string => Money::nanoToUsd($this->amount_nanodollars ?? 0),
         );
     }
 
@@ -58,7 +59,7 @@ class WalletTransaction extends Model
     protected function balanceAfterUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->balance_after_nanodollars),
+            fn (): string => Money::nanoToUsd($this->balance_after_nanodollars ?? 0),
         );
     }
 
@@ -68,7 +69,7 @@ class WalletTransaction extends Model
     protected function reservedAfterUsd(): Attribute
     {
         return Attribute::get(
-            fn (): string => Money::nanoToUsd((int) $this->reserved_after_nanodollars),
+            fn (): string => Money::nanoToUsd($this->reserved_after_nanodollars ?? 0),
         );
     }
 

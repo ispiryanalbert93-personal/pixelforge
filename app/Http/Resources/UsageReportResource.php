@@ -46,8 +46,8 @@ class UsageReportResource extends JsonResource
         return array_map(static fn (array $row): array => [
             ...$row,
             ...UsageMetricsResource::formatFinancialMetrics(
-                (int) ($row['credit_spend_nano'] ?? 0),
-                (int) ($row['provider_cost_nano'] ?? 0),
+                $row['credit_spend_nano'] ?? 0,
+                $row['provider_cost_nano'] ?? 0,
             ),
         ], $rows);
     }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Support\Money;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -53,7 +54,7 @@ class ProfileController extends Controller
 
         $user = $request->user();
 
-        if ($user->generations()->exists() || (int) $user->wallet->reserved_nanodollars > 0) {
+        if ($user->generations()->exists() || Money::compare($user->wallet->reserved_nanodollars ?? 0, 0) > 0) {
             throw ValidationException::withMessages([
                 'password' => 'Accounts with generation history or active credit holds cannot be deleted to preserve billing reconciliation records.',
             ]);

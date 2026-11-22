@@ -19,25 +19,28 @@ class SettleWalletCharge
      */
     public function handle(
         Generation $generation,
-        int $actualProviderCostNano,
-        int $actualUserCostNano,
+        int|float|string $actualProviderCostNano,
+        int|float|string $actualUserCostNano,
         ?string $description = null,
     ): ?WalletTransaction {
-        if ($actualProviderCostNano < 0) {
-            throw new InvalidArgumentException("Actual provider cost must be non-negative, got {$actualProviderCostNano}.");
+        $providerCost = Money::normalizeNano($actualProviderCostNano);
+        $userCost = Money::normalizeNano($actualUserCostNano);
+
+        if (Money::compare($providerCost, 0) < 0) {
+            throw new InvalidArgumentException("Actual provider cost must be non-negative, got {$providerCost}.");
         }
 
-        if ($actualUserCostNano < 0) {
-            throw new InvalidArgumentException("Actual user cost must be non-negative, got {$actualUserCostNano}.");
+        if (Money::compare($userCost, 0) < 0) {
+            throw new InvalidArgumentException("Actual user cost must be non-negative, got {$userCost}.");
         }
 
-        $formattedCost = Money::formatDisplay($actualUserCostNano);
+        $formattedCost = Money::formatDisplay($userCost);
 
         return $this->finalizeWalletSettlement->handle(
             generation: $generation,
             type: WalletTransactionType::Charge,
-            actualProviderCostNano: $actualProviderCostNano,
-            actualUserCostNano: $actualUserCostNano,
+            actualProviderCostNano: $providerCost,
+            actualUserCostNano: $userCost,
             description: $description ?? "Settled generation {$generation->id} (charged {$formattedCost})",
         );
     }

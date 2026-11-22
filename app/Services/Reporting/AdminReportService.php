@@ -159,15 +159,15 @@ class AdminReportService
             }
 
             $isSucceeded = $generation->status === GenerationStatus::Succeeded;
-            $creditNano = $isSucceeded ? (int) ($generation->actual_user_cost_nano ?? 0) : 0;
-            $providerNano = $isSucceeded ? (int) ($generation->actual_provider_cost_nano ?? 0) : 0;
+            $creditNano = $isSucceeded ? ($generation->actual_user_cost_nano ?? 0) : 0;
+            $providerNano = $isSucceeded ? ($generation->actual_provider_cost_nano ?? 0) : 0;
             $succeededDelta = $isSucceeded ? 1 : 0;
             $failedDelta = $isSucceeded ? 0 : 1;
 
             $totals['succeeded_count'] += $succeededDelta;
             $totals['failed_count'] += $failedDelta;
-            $totals['credit_spend_nano'] += $creditNano;
-            $totals['provider_cost_nano'] += $providerNano;
+            $totals['credit_spend_nano'] = Money::add($totals['credit_spend_nano'], $creditNano);
+            $totals['provider_cost_nano'] = Money::add($totals['provider_cost_nano'], $providerNano);
 
             $dailyBuckets[$utcDate] ??= [
                 'succeeded_count' => 0,
@@ -177,8 +177,8 @@ class AdminReportService
             ];
             $dailyBuckets[$utcDate]['succeeded_count'] += $succeededDelta;
             $dailyBuckets[$utcDate]['failed_count'] += $failedDelta;
-            $dailyBuckets[$utcDate]['credit_spend_nano'] += $creditNano;
-            $dailyBuckets[$utcDate]['provider_cost_nano'] += $providerNano;
+            $dailyBuckets[$utcDate]['credit_spend_nano'] = Money::add($dailyBuckets[$utcDate]['credit_spend_nano'], $creditNano);
+            $dailyBuckets[$utcDate]['provider_cost_nano'] = Money::add($dailyBuckets[$utcDate]['provider_cost_nano'], $providerNano);
 
             if (! isset($userStats[$generation->user_id])) {
                 continue;
@@ -186,8 +186,8 @@ class AdminReportService
 
             $userStats[$generation->user_id]['succeeded_count'] += $succeededDelta;
             $userStats[$generation->user_id]['failed_count'] += $failedDelta;
-            $userStats[$generation->user_id]['credit_spend_nano'] += $creditNano;
-            $userStats[$generation->user_id]['provider_cost_nano'] += $providerNano;
+            $userStats[$generation->user_id]['credit_spend_nano'] = Money::add($userStats[$generation->user_id]['credit_spend_nano'], $creditNano);
+            $userStats[$generation->user_id]['provider_cost_nano'] = Money::add($userStats[$generation->user_id]['provider_cost_nano'], $providerNano);
 
             $dailyUserKey = "{$utcDate}:{$generation->user_id}";
             $dailyByUserBuckets[$dailyUserKey] ??= [
@@ -200,8 +200,8 @@ class AdminReportService
             ];
             $dailyByUserBuckets[$dailyUserKey]['succeeded_count'] += $succeededDelta;
             $dailyByUserBuckets[$dailyUserKey]['failed_count'] += $failedDelta;
-            $dailyByUserBuckets[$dailyUserKey]['credit_spend_nano'] += $creditNano;
-            $dailyByUserBuckets[$dailyUserKey]['provider_cost_nano'] += $providerNano;
+            $dailyByUserBuckets[$dailyUserKey]['credit_spend_nano'] = Money::add($dailyByUserBuckets[$dailyUserKey]['credit_spend_nano'], $creditNano);
+            $dailyByUserBuckets[$dailyUserKey]['provider_cost_nano'] = Money::add($dailyByUserBuckets[$dailyUserKey]['provider_cost_nano'], $providerNano);
         }
 
         return [
@@ -265,7 +265,7 @@ class AdminReportService
             'output_tokens' => (int) ($remoteMetrics['output_tokens'] ?? 0),
             'reasoning_tokens' => (int) ($remoteMetrics['reasoning_tokens'] ?? 0),
             'remote_cost_nano' => $remoteCostNano,
-            'matches_remote' => $remoteAvailable ? $localMetrics['provider_cost_nano'] === $remoteCostNano : null,
+            'matches_remote' => $remoteAvailable ? Money::compare($localMetrics['provider_cost_nano'], $remoteCostNano) === 0 : null,
         ];
     }
 
@@ -279,6 +279,8 @@ class AdminReportService
             /** @var User $user */
             $user = $stat['user'];
             $wallet = $user->wallet;
+            $balanceNano = $wallet->balance_nanodollars ?? 0;
+            $reservedNano = $wallet->reserved_nanodollars ?? 0;
 
             return [
                 'id' => $user->id,
@@ -289,18 +291,19 @@ class AdminReportService
                 'active_count' => $stat['active_count'],
                 'credit_spend_nano' => $stat['credit_spend_nano'],
                 'provider_cost_nano' => $stat['provider_cost_nano'],
-                'balance_nanodollars' => (int) $wallet->balance_nanodollars,
+                'balance_nanodollars' => Money::toNumber($balanceNano),
                 'balance_usd' => $wallet->balance_usd,
-                'balance_formatted' => Money::formatDisplay((int) $wallet->balance_nanodollars),
-                'reserved_nanodollars' => (int) $wallet->reserved_nanodollars,
+                'balance_formatted' => Money::formatDisplay($balanceNano),
+                'reserved_nanodollars' => Money::toNumber($reservedNano),
                 'reserved_usd' => $wallet->reserved_usd,
-                'reserved_formatted' => Money::formatDisplay((int) $wallet->reserved_nanodollars),
+                'reserved_formatted' => Money::formatDisplay($reservedNano),
             ];
         }, array_values($userStats));
 
         usort(
             $rows,
-            static fn (array $a, array $b): int => [$b['credit_spend_nano'], $a['id']] <=> [$a['credit_spend_nano'], $b['id']],
+            static fn (array $a, array $b): int => Money::compare($b['credit_spend_nano'], $a['credit_spend_nano'])
+                ?: ($a['id'] <=> $b['id']),
         );
 
         return $rows;
@@ -330,8 +333,9 @@ class AdminReportService
 
         usort(
             $rows,
-            static fn (array $a, array $b): int => [$b['date'], $b['credit_spend_nano'], $a['user_id']]
-                <=> [$a['date'], $a['credit_spend_nano'], $b['user_id']],
+            static fn (array $a, array $b): int => ($b['date'] <=> $a['date'])
+                ?: Money::compare($b['credit_spend_nano'], $a['credit_spend_nano'])
+                ?: ($a['user_id'] <=> $b['user_id']),
         );
 
         return $rows;

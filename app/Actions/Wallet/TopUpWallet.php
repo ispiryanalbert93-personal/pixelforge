@@ -18,28 +18,28 @@ class TopUpWallet
     /**
      * Add funds to a user's wallet and record a top-up transaction.
      */
-    public function handle(User $user, int $amountNano, ?string $description = null): WalletTransaction
+    public function handle(User $user, int|float|string $amountNano, ?string $description = null): WalletTransaction
     {
-        if ($amountNano <= 0) {
-            throw new InvalidArgumentException("Top-up amount must be positive, got {$amountNano}.");
+        $normalizedAmount = Money::normalizeNano($amountNano);
+
+        if (Money::compare($normalizedAmount, 0) <= 0) {
+            throw new InvalidArgumentException("Top-up amount must be positive, got {$normalizedAmount}.");
         }
 
-        $transaction = DB::transaction(function () use ($user, $amountNano, $description): WalletTransaction {
+        $transaction = DB::transaction(function () use ($user, $normalizedAmount, $description): WalletTransaction {
             $lockedWallet = $this->lockUserWallet->handle((int) $user->getKey());
 
-            $lockedWallet->balance_nanodollars += $amountNano;
+            $lockedWallet->balance_nanodollars = Money::add($lockedWallet->balance_nanodollars ?? 0, $normalizedAmount);
             $lockedWallet->save();
 
-            $formattedAmount = Money::formatDisplay($amountNano, 2);
+            $formattedAmount = Money::formatDisplay($normalizedAmount, 2);
 
             return WalletTransaction::create([
                 'user_id' => $lockedWallet->user_id,
                 'wallet_id' => $lockedWallet->id,
-
                 'type' => WalletTransactionType::TopUp,
                 'description' => $description ?? "Wallet top-up ({$formattedAmount})",
-
-                'amount_nanodollars' => $amountNano,
+                'amount_nanodollars' => $normalizedAmount,
                 'balance_after_nanodollars' => $lockedWallet->balance_nanodollars,
                 'reserved_after_nanodollars' => $lockedWallet->reserved_nanodollars,
             ]);

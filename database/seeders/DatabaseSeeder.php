@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Actions\Wallet\TopUpWallet;
 use App\Models\User;
+use App\Support\Money;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
 
@@ -38,10 +39,10 @@ class DatabaseSeeder extends Seeder
             $demoUser->forceFill(['is_admin' => false])->save();
         }
 
-        if ((int) $demoUser->wallet->balance_nanodollars === 0) {
+        if (Money::compare($demoUser->wallet->balance_nanodollars ?? 0, 0) === 0) {
             app(TopUpWallet::class)->handle(
                 user: $demoUser,
-                amountNano: 25_000_000_000,
+                amountNano: Money::usdToNano('25.00'),
                 description: 'Initial demo user credits ($25.00)',
             );
         }

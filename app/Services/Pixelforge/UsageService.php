@@ -138,9 +138,11 @@ class UsageService
      */
     private function sumDays(Collection $days): array
     {
-        $costNano = $days->sum(
-            static fn (array $day): int => Money::usdToNano((string) ($day['cost_usd'] ?? '0')),
-        );
+        $costNano = '0';
+
+        foreach ($days as $day) {
+            $costNano = Money::add($costNano, Money::usdToNano((string) ($day['cost_usd'] ?? '0')));
+        }
 
         return [
             'generations' => (int) $days->sum('generations'),
@@ -148,7 +150,7 @@ class UsageService
             'input_image_tokens' => (int) $days->sum('input_image_tokens'),
             'output_tokens' => (int) $days->sum('output_tokens'),
             'reasoning_tokens' => (int) $days->sum('reasoning_tokens'),
-            'cost_usd' => Money::nanoToUsd((int) $costNano),
+            'cost_usd' => Money::nanoToUsd($costNano),
         ];
     }
 }

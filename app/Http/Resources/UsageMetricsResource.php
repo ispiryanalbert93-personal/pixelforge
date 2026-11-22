@@ -13,20 +13,22 @@ class UsageMetricsResource extends JsonResource
     /**
      * Format shared local financial totals (credit spend, provider cost, profit) in nanodollars and USD.
      *
-     * @return array<string, int|string>
+     * @return array<string, int|float|string>
      */
-    public static function formatFinancialMetrics(int $creditSpendNano, int $providerCostNano): array
+    public static function formatFinancialMetrics(int|float|string $creditSpendNano, int|float|string $providerCostNano): array
     {
-        $profitNano = $creditSpendNano - $providerCostNano;
+        $creditSpend = Money::normalizeNano($creditSpendNano);
+        $providerCost = Money::normalizeNano($providerCostNano);
+        $profitNano = Money::sub($creditSpend, $providerCost);
 
         return [
-            'credit_spend_nano' => $creditSpendNano,
-            'credit_spend_usd' => Money::nanoToUsd($creditSpendNano),
-            'credit_spend_formatted' => Money::formatDisplay($creditSpendNano),
-            'provider_cost_nano' => $providerCostNano,
-            'provider_cost_usd' => Money::nanoToUsd($providerCostNano),
-            'provider_cost_formatted' => Money::formatDisplay($providerCostNano),
-            'profit_nano' => $profitNano,
+            'credit_spend_nano' => Money::toNumber($creditSpend),
+            'credit_spend_usd' => Money::nanoToUsd($creditSpend),
+            'credit_spend_formatted' => Money::formatDisplay($creditSpend),
+            'provider_cost_nano' => Money::toNumber($providerCost),
+            'provider_cost_usd' => Money::nanoToUsd($providerCost),
+            'provider_cost_formatted' => Money::formatDisplay($providerCost),
+            'profit_nano' => Money::toNumber($profitNano),
             'profit_usd' => Money::nanoToUsd($profitNano),
             'profit_formatted' => Money::formatDisplay($profitNano),
         ];
@@ -41,10 +43,10 @@ class UsageMetricsResource extends JsonResource
     {
         $metrics = is_array($this->resource) ? $this->resource : [];
 
-        $creditSpendNano = (int) ($metrics['credit_spend_nano'] ?? 0);
-        $providerCostNano = (int) ($metrics['provider_cost_nano'] ?? 0);
-        $remoteCostNano = (int) ($metrics['remote_cost_nano'] ?? 0);
-        $deltaNano = $providerCostNano - $remoteCostNano;
+        $creditSpendNano = Money::normalizeNano($metrics['credit_spend_nano'] ?? 0);
+        $providerCostNano = Money::normalizeNano($metrics['provider_cost_nano'] ?? 0);
+        $remoteCostNano = Money::normalizeNano($metrics['remote_cost_nano'] ?? 0);
+        $deltaNano = Money::sub($providerCostNano, $remoteCostNano);
 
         $inputTextTokens = (int) ($metrics['input_text_tokens'] ?? 0);
         $inputImageTokens = (int) ($metrics['input_image_tokens'] ?? 0);
@@ -62,10 +64,10 @@ class UsageMetricsResource extends JsonResource
             'output_tokens' => $outputTokens,
             'reasoning_tokens' => $reasoningTokens,
             'total_tokens' => $inputTextTokens + $inputImageTokens + $outputTokens + $reasoningTokens,
-            'remote_cost_nano' => $remoteCostNano,
+            'remote_cost_nano' => Money::toNumber($remoteCostNano),
             'remote_cost_usd' => Money::nanoToUsd($remoteCostNano),
             'remote_cost_formatted' => Money::formatDisplay($remoteCostNano),
-            'delta_nano' => $deltaNano,
+            'delta_nano' => Money::toNumber($deltaNano),
             'delta_usd' => Money::nanoToUsd($deltaNano),
             'delta_formatted' => Money::formatDisplay($deltaNano),
             'matches_remote' => $metrics['matches_remote'] ?? null,

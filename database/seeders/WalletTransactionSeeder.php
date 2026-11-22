@@ -11,6 +11,7 @@ use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
 use App\Models\Generation;
 use App\Models\User;
+use App\Support\Money;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Str;
 
@@ -42,7 +43,7 @@ class WalletTransactionSeeder extends Seeder
         foreach ($customers as $user) {
             $topUpWallet->handle(
                 user: $user,
-                amountNano: 15_000_000_000,
+                amountNano: Money::usdToNano('15.00'),
                 description: 'Seeded wallet top-up ($15.00)',
             );
 

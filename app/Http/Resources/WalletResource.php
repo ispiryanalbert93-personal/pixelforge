@@ -21,13 +21,16 @@ class WalletResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $balanceNano = $this->balance_nanodollars ?? 0;
+        $reservedNano = $this->reserved_nanodollars ?? 0;
+
         return [
-            'balance_nanodollars' => (int) $this->balance_nanodollars,
+            'balance_nanodollars' => Money::toNumber($balanceNano),
             'balance_usd' => $this->balance_usd,
-            'balance_formatted' => Money::formatDisplay((int) $this->balance_nanodollars),
-            'reserved_nanodollars' => (int) $this->reserved_nanodollars,
+            'balance_formatted' => Money::formatDisplay($balanceNano),
+            'reserved_nanodollars' => Money::toNumber($reservedNano),
             'reserved_usd' => $this->reserved_usd,
-            'reserved_formatted' => Money::formatDisplay((int) $this->reserved_nanodollars),
+            'reserved_formatted' => Money::formatDisplay($reservedNano),
         ];
     }
 }
