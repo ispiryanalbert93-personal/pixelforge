@@ -5,7 +5,7 @@ namespace App\Services\Reporting;
 use App\Enums\GenerationStatus;
 use App\Models\Generation;
 use App\Models\User;
-use App\Services\Pixelforge\PixelforgeUsageService;
+use App\Services\Pixelforge\UsageService;
 use App\Support\Money;
 use Illuminate\Database\Eloquent\Collection as EloquentCollection;
 use Illuminate\Support\Carbon;
@@ -15,7 +15,7 @@ use Illuminate\Support\LazyCollection;
 class AdminReportService
 {
     public function __construct(
-        private readonly PixelforgeUsageService $usageService,
+        private readonly UsageService $usageService,
     ) {}
 
     /**
