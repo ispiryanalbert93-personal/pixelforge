@@ -1,24 +1,12 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Head, Link, usePage } from '@inertiajs/vue3';
-import {
-    ArrowRight,
-    Calculator,
-    Coins,
-    Sparkles,
-    Webhook
-} from 'lucide-vue-next';
 import type { SharedData } from '@/types';
+import { Head, Link, usePage } from '@inertiajs/vue3';
+import { ArrowRight, Calculator, Coins, Sparkles, Webhook } from 'lucide-vue-next';
+import { computed } from 'vue';
 
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle
-} from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
 const page = usePage<SharedData>();
 const appName = computed(() => page.props.name);
@@ -41,9 +29,7 @@ const user = computed(() => page.props.auth?.user);
 
                 <nav class="flex items-center gap-2">
                     <Button v-if="user" as-child>
-                        <Link :href="route('dashboard')">
-                            Open Studio <ArrowRight class="size-4" />
-                        </Link>
+                        <Link :href="route('dashboard')"> Open Studio <ArrowRight class="size-4" /> </Link>
                     </Button>
 
                     <template v-else>
@@ -66,9 +52,7 @@ const user = computed(() => page.props.auth?.user);
                     Powered by Pixelforge Token Billing
                 </Badge>
 
-                <h1 class="text-4xl font-bold tracking-tight sm:text-5xl">
-                    AI Image Generation with Exact, Upfront Token Pricing
-                </h1>
+                <h1 class="text-4xl font-bold tracking-tight sm:text-5xl">AI Image Generation with Exact, Upfront Token Pricing</h1>
                 <p class="mt-4 text-lg text-muted-foreground">
                     {{ appName }} calculates every text, reference image, output, and reasoning token before you submit - reserving only the maximum
                     estimate and settling to exact cost upon completion.
@@ -82,12 +66,8 @@ const user = computed(() => page.props.auth?.user);
                         <div class="mb-2 flex size-10 items-center justify-center rounded-lg bg-primary/10 text-primary">
                             <Calculator class="size-5" />
                         </div>
-                        <CardTitle class="text-lg">
-                            Instant Upfront Cost Estimator
-                        </CardTitle>
-                        <CardDescription>
-                            Know your exact min–max nanodollar range before generating.
-                        </CardDescription>
+                        <CardTitle class="text-lg"> Instant Upfront Cost Estimator </CardTitle>
+                        <CardDescription> Know your exact min–max nanodollar range before generating. </CardDescription>
                     </CardHeader>
                     <CardContent class="text-sm text-muted-foreground">
                         Real-time client and server calculations account for prompt tokens, up to 4 reference images (+765 tokens each), output
@@ -102,12 +82,8 @@ const user = computed(() => page.props.auth?.user);
                         >
                             <Coins class="size-5" />
                         </div>
-                        <CardTitle class="text-lg">
-                            Safe Credit Holds & Zero-Risk Failures
-                        </CardTitle>
-                        <CardDescription>
-                            Atomic ledger accounting with automatic refunds on failures.
-                        </CardDescription>
+                        <CardTitle class="text-lg"> Safe Credit Holds & Zero-Risk Failures </CardTitle>
+                        <CardDescription> Atomic ledger accounting with automatic refunds on failures. </CardDescription>
                     </CardHeader>
                     <CardContent class="text-sm text-muted-foreground">
                         The maximum estimate is held safely in an immutable double-entry ledger at submission. Unspent reserves are released
@@ -120,16 +96,11 @@ const user = computed(() => page.props.auth?.user);
                         <div class="mb-2 flex size-10 items-center justify-center rounded-lg bg-blue-500/10 text-blue-600 dark:text-blue-400">
                             <Webhook class="size-5" />
                         </div>
-                        <CardTitle class="text-lg">
-                            Resilient Webhooks
-                        </CardTitle>
-                        <CardDescription>
-                            HMAC-verified webhook ingestion with live WebSocket updates.
-                        </CardDescription>
+                        <CardTitle class="text-lg"> Resilient Webhooks </CardTitle>
+                        <CardDescription> HMAC-verified webhook ingestion with live WebSocket updates. </CardDescription>
                     </CardHeader>
                     <CardContent class="text-sm text-muted-foreground">
-                        Idempotent webhook processing, duplicate/out-of-order protection,
-                        and instant status updates.
+                        Idempotent webhook processing, duplicate/out-of-order protection, and instant status updates.
                     </CardContent>
                 </Card>
             </div>

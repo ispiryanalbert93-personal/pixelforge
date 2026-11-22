@@ -348,7 +348,7 @@ class GenerationControllerTest extends TestCase
             ->assertInertia(fn (Assert $page) => $page
                 ->component('Dashboard')
                 ->where('pricing_config', null)
-                ->where('pricing_error', 'Pixelforge API error (503 overloaded): Pricing service busy')
+                ->where('pricing_error', 'Pixelforge pricing service is temporarily overloaded. Please retry in a moment.')
             );
     }
 

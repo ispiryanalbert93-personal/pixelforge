@@ -1,6 +1,6 @@
-import { computed, ref } from 'vue';
-import { router, usePage } from '@inertiajs/vue3';
 import type { SharedData, WalletData } from '@/types';
+import { router, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 const liveWalletOverride = ref<WalletData | null>(null);
 let inertiaResetBound = false;

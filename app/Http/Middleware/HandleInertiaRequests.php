@@ -3,7 +3,6 @@
 namespace App\Http\Middleware;
 
 use App\Http\Resources\WalletResource;
-use Illuminate\Foundation\Inspiring;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -37,21 +36,19 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
-        [$message, $author] = str(Inspiring::quotes()->random())->explode('-');
-
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'is_development' => app()->environment(['local', 'development']),
-
-            'quote' => ['message' => trim($message), 'author' => trim($author)],
             'auth' => [
                 'user' => function () use ($request): ?array {
-                    $user = $request->user()?->fresh();
+                    $user = $request->user();
 
                     if ($user === null) {
                         return null;
                     }
+
+                    $user->load('wallet');
 
                     return [
                         ...$user->withoutRelations()->toArray(),

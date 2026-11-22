@@ -1,44 +1,17 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
-import { Head, router, usePage } from '@inertiajs/vue3';
-import { AlertTriangle, CheckCircle2 } from 'lucide-vue-next';
-import type {
-    AdminReport,
-    BreadcrumbItem,
-    SharedData
-} from '@/types';
-import {
-    Alert,
-    AlertDescription,
-    AlertTitle
-} from '@/components/ui/alert';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow
-} from '@/components/ui/table';
-import {
-    Tabs,
-    TabsContent,
-    TabsList,
-    TabsTrigger
-} from '@/components/ui/tabs';
-import {
-    Card,
-    CardContent,
-    CardDescription,
-    CardHeader,
-    CardTitle
-} from '@/components/ui/card';
-import { DatePicker } from '@/components/ui/date-picker';
-import { Label } from '@/components/ui/label';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { DatePicker } from '@/components/ui/date-picker';
+import { Label } from '@/components/ui/label';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import AdminLayout from '@/layouts/AdminLayout.vue';
-
+import type { AdminReport, BreadcrumbItem, SharedData } from '@/types';
+import { Head, router, usePage } from '@inertiajs/vue3';
+import { AlertTriangle, CheckCircle2 } from 'lucide-vue-next';
+import { computed, ref, watch } from 'vue';
 
 const props = defineProps<{
     report: AdminReport;

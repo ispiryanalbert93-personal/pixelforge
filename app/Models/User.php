@@ -38,15 +38,6 @@ class User extends Authenticatable
     ];
 
     /**
-     * The relationships that should always be loaded.
-     *
-     * @var list<string>
-     */
-    protected $with = [
-        'wallet',
-    ];
-
-    /**
      * Get the attributes that should be cast.
      *
      * @return array<string, string>

@@ -1,20 +1,12 @@
 <script setup lang="ts">
-import { computed, watch } from 'vue';
-import { useForm, usePage } from '@inertiajs/vue3';
-import { Loader2 } from 'lucide-vue-next';
-import type { SharedData } from '@/types';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogFooter,
-    DialogHeader,
-    DialogTitle
-} from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-
+import type { SharedData } from '@/types';
+import { useForm, usePage } from '@inertiajs/vue3';
+import { Loader2 } from 'lucide-vue-next';
+import { computed, watch } from 'vue';
 
 const props = defineProps<{
     open: boolean;

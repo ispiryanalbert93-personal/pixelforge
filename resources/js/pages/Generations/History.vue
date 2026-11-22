@@ -1,31 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { Head, Link, router, usePage } from '@inertiajs/vue3';
-import { ImageIcon, Plus, RefreshCw, Sparkles } from 'lucide-vue-next';
-import type {
-    BreadcrumbItem,
-    GenerationHistoryRow,
-    SharedData
-} from '@/types';
-import type {
-    PaginatedPayloadMeta,
-    StatusFilterOption
-} from '@/types/pagination';
-import { useGenerationRealtime } from '@/composables/useGenerationRealtime';
 import { createGenerationColumns } from '@/columns/generations';
-import {
-    Empty,
-    EmptyContent,
-    EmptyDescription,
-    EmptyHeader,
-    EmptyMedia,
-    EmptyTitle
-} from '@/components/ui/empty';
+import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
 import { Button } from '@/components/ui/button';
 import { DataTable } from '@/components/ui/data-table';
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { useGenerationRealtime } from '@/composables/useGenerationRealtime';
 import AppLayout from '@/layouts/AppLayout.vue';
-import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
-
+import type { BreadcrumbItem, GenerationHistoryFilters, GenerationHistoryRow, SharedData } from '@/types';
+import type { PaginatedPayloadMeta, StatusFilterOption } from '@/types/pagination';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
+import { ImageIcon, Plus, RefreshCw, Sparkles } from 'lucide-vue-next';
+import { computed, ref } from 'vue';
 
 const props = defineProps<{
     generations: {
@@ -33,15 +18,15 @@ const props = defineProps<{
         meta: PaginatedPayloadMeta;
     };
     has_active_generations: boolean;
-    filters: Record<string, any>;
+    filters: GenerationHistoryFilters;
     statusOptions: StatusFilterOption[];
 }>();
 
 const page = usePage<SharedData>();
 const { generations } = useGenerationRealtime(
     () => props.generations.data,
-    undefined,
-    () => props.has_active_generations,
+    () => props.filters,
+    () => props.generations.meta.current_page,
     () => page.props.auth?.user?.id,
 );
 
@@ -53,6 +38,8 @@ const breadcrumbs: BreadcrumbItem[] = [
 ];
 
 const isReloading = ref(false);
+const syncingIds = ref<Record<number, boolean>>({});
+const brokenImageIds = ref<Record<number, boolean>>({});
 const previewGeneration = ref<GenerationHistoryRow | null>(null);
 
 const previewOpen = computed({
@@ -71,9 +58,37 @@ const showEmptyState = computed(() => {
     return status === 'all' && search === '' && props.generations.meta.total === 0;
 });
 
-const columns = createGenerationColumns((generation) => {
-    previewGeneration.value = generation;
+const columns = createGenerationColumns({
+    onPreview: (generation) => {
+        previewGeneration.value = generation;
+    },
+    onSync: (generation) => {
+        syncGeneration(generation.id);
+    },
+    isSyncing: (id) => Boolean(syncingIds.value[id]),
+    isImageBroken: (generation) => Boolean(brokenImageIds.value[generation.id]),
+    markImageBroken: (id) => {
+        brokenImageIds.value[id] = true;
+    },
 });
+
+function syncGeneration(generationId: number): void {
+    if (syncingIds.value[generationId]) {
+        return;
+    }
+
+    syncingIds.value[generationId] = true;
+    router.post(
+        route('generations.sync', { generation: generationId }),
+        {},
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                syncingIds.value[generationId] = false;
+            },
+        },
+    );
+}
 
 function refreshHistory(): void {
     isReloading.value = true;

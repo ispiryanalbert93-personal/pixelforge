@@ -7,11 +7,14 @@ use App\Support\Money;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 
 class UsageService
 {
     public const int DEFAULT_RANGE_DAYS = 30;
+
+    public const int CACHE_TTL_SECONDS = 60;
 
     public function __construct(
         private readonly Client $client,
@@ -36,28 +39,34 @@ class UsageService
     public function getUsageReport(?string $startDate = null, ?string $endDate = null): array
     {
         [$queryStart, $queryEnd, $fallbackStart, $fallbackEnd] = $this->resolveWindow($startDate, $endDate);
+        $cacheKey = sprintf('pixelforge:usage:%s:%s', $queryStart ?? 'default', $queryEnd ?? 'default');
 
-        try {
-            $payload = $this->client->getUsage($queryStart, $queryEnd);
-        } catch (PixelforgeApiException|ConnectionException $exception) {
-            Log::warning('Failed to fetch Pixelforge /v1/usage report.', [
-                'start_date' => $queryStart,
-                'end_date' => $queryEnd,
-                'message' => $exception->getMessage(),
-            ]);
+        $payload = Cache::get($cacheKey);
 
-            return [
-                'available' => false,
-                'error' => $exception->getMessage(),
-                'days' => collect(),
-                'total' => [],
-                'filters' => [
-                    'start_date' => $startDate,
-                    'end_date' => $endDate,
-                    'effective_start_date' => $fallbackStart,
-                    'effective_end_date' => $fallbackEnd,
-                ],
-            ];
+        if (! is_array($payload)) {
+            try {
+                $payload = $this->client->getUsage($queryStart, $queryEnd);
+                Cache::put($cacheKey, $payload, self::CACHE_TTL_SECONDS);
+            } catch (PixelforgeApiException|ConnectionException $exception) {
+                Log::warning('Failed to fetch Pixelforge /v1/usage report.', [
+                    'start_date' => $queryStart,
+                    'end_date' => $queryEnd,
+                    'message' => $exception->getMessage(),
+                ]);
+
+                return [
+                    'available' => false,
+                    'error' => 'Unable to reach Pixelforge /v1/usage right now. Local billing metrics remain available below.',
+                    'days' => collect(),
+                    'total' => [],
+                    'filters' => [
+                        'start_date' => $startDate,
+                        'end_date' => $endDate,
+                        'effective_start_date' => $fallbackStart,
+                        'effective_end_date' => $fallbackEnd,
+                    ],
+                ];
+            }
         }
 
         $effectiveStartDate = $queryStart

@@ -146,9 +146,7 @@ export function calculateLiveEstimate(
             : Number((BigInt(estimatedTextTokens) * (VARIANCE_SCALE - varianceScaled)) / VARIANCE_SCALE);
     const maxNumerator = BigInt(estimatedTextTokens) * (VARIANCE_SCALE + varianceScaled);
     const maxTextTokens =
-        estimatedTextTokens === 0 || varianceScaled === 0n
-            ? estimatedTextTokens
-            : Number((maxNumerator + VARIANCE_SCALE - 1n) / VARIANCE_SCALE);
+        estimatedTextTokens === 0 || varianceScaled === 0n ? estimatedTextTokens : Number((maxNumerator + VARIANCE_SCALE - 1n) / VARIANCE_SCALE);
 
     const refImageCount = referenceImages.filter((url) => url.trim() !== '').length;
     const inputImageTokens = refImageCount * pricingConfig.tokens_per_reference_image;

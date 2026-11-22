@@ -1,58 +1,66 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# PixelCanvas (`pixelforge`)
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+A Laravel 13 + Inertia v2 + Vue 3 studio integrating the **Pixelforge** asynchronous image-generation API (`https://pixelforge.promptedit.dev/v1`).
 
-## About Laravel
+## Features
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+- **Image Studio (`/dashboard`):** Write prompts (up to 4,000 Unicode code points), pick size (`1024x1024`, `1536x1024`, `1024x1536`), quality (`low`, `medium`, `high`), and up to 4 reference image URLs with a live upfront cost breakdown (min / midpoint / max hold) before submitting.
+- **Credit Wallet & Pre-Auth Holds:** Simulated USD credit top-ups (`Buy credits`), max-estimate pre-auth holds at submission, exact settlement on completion, automatic 100% refund on failed generations, and full transaction ledger.
+- **Live Status & History (`/generations/history`):** Real-time updates over Pusher private channels (`GenerationUpdated`), server-side status tabs and search by Pixelforge ID, token usage inspection, image preview/download, and manual sync (`POST /generations/{id}/sync`).
+- **Operator Usage & Profit Report (`/admin/reports`):** Daily and per-user credit spend, provider costs, and profit reconciled against `GET /v1/usage` (grouped by UTC `completed_at` day).
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Tech Stack
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Backend:** PHP 8.4 (`ext-bcmath`), Laravel 13, Inertia Laravel v2, Ziggy, Pusher PHP Server
+- **Frontend:** Vue 3 (`<script setup lang="ts">`), TypeScript, Tailwind CSS v3, `shadcn-vue`, Laravel Echo + `pusher-js`
+- **Database:** MySQL (runtime) / `:memory:` SQLite (PHPUnit test suite)
 
-## Learning Laravel
+## Local Setup
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+1. Install dependencies:
+   ```bash
+   composer install
+   npm install
+   ```
+2. Configure environment:
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+   Set your database credentials, Pusher credentials (`PUSHER_APP_ID`, `PUSHER_APP_KEY`, `PUSHER_APP_SECRET`, `PUSHER_APP_CLUSTER`), and Pixelforge credentials:
+   - `PIXELFORGE_BASE_URL=https://pixelforge.promptedit.dev/v1`
+   - `PIXELFORGE_API_KEY=<your key>`
+   - `PIXELFORGE_WEBHOOK_SECRET=<your whsec_ secret>`
+   - `PIXELFORGE_REQUESTS_ENABLED=true`
+3. Migrate and seed demo accounts:
+   ```bash
+   php artisan migrate --seed
+   ```
+   Seeded demo users (password: `password`):
+   - **Customer:** `test@example.com` (seeded with `$25.00` credit)
+   - **Operator Admin:** `admin@example.com` (accesses `/admin/reports`)
+4. Start the local stack (Laravel server, queue worker, Pail logs, Vite):
+   ```bash
+   composer dev
+   ```
+   For webhooks in local development, expose your local server via Expose, ngrok, or Cloudflare Tunnel and register `https://<tunnel-host>/api/webhooks/pixelforge` in the Pixelforge dashboard.
 
-In addition, [Laracasts](https://laracasts.com) contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+## Architecture & Design Decisions
 
-You can also watch bite-sized lessons with real-world projects on [Laravel Learn](https://laravel.com/learn), where you will be guided through building a Laravel application from scratch while learning PHP fundamentals.
+- **Exact Integer Money (`App\Support\Money` & `resources/js/lib/pricing.ts`):** All money values are stored as exact integer nanodollars (`1 USD = 1,000,000,000`, `BIGINT`) and computed using `bcmath` (`RoundingMode::HalfAwayFromZero`) on the backend and `BigInt` on the frontend.
+- **Live Pricing Only (`PricingService`):** Rates and token rules are fetched from `GET /v1/pricing` and cached (`PIXELFORGE_PRICING_CACHE_TTL=3600`). No hardcoded fallback prices are used. If a `202` creation response returns updated rates, the pricing cache is invalidated immediately and the generation's locked rates and hold delta are adjusted.
+- **Pre-Auth Holds, Lock Order & Idempotency:** Pessimistic row locks are always acquired in canonical order (`Wallet` before `Generation`) inside a single DB transaction (`LockGeneration`, `FinalizeWalletSettlement`). Settlement checks `settled_at !== null` inside the row lock so duplicate webhooks or syncs can never double-charge or double-release. If mid-flight provider rate increases or post-timeout webhook recovery exceed the held reserve, actual cost is still charged in full so customer billing stays reconciled with `/v1/usage`.
+- **Queued Submission & Retries (`SubmitGenerationToPixelforge`):** Submissions use a per-generation UUID `Idempotency-Key`. `429` (`rate_limit_exceeded`, `concurrency_limit_exceeded`), `503 overloaded`, and transient `ConnectionException` / 5xx errors are retried asynchronously respecting `Retry-After` headers with capped exponential backoff. Ambiguous local failures (e.g. exhausted submission timeouts) remain recoverable via `metadata.local_generation_id` if a late webhook arrives.
+- **Webhooks & Reconciliation (`VerifyPixelforgeWebhookSignature`, `WebhookService`, `ProcessPixelforgeWebhook`):** Incoming webhooks verify HMAC-SHA256 signatures against raw request bodies with constant-time comparison (`hash_equals`) and a 300s replay window, deduplicate atomically via `webhook_events.event_id` unique constraint, and process asynchronously on the queue while enforcing monotonic status transitions. Stuck generations can also be reconciled on demand via the UI Sync button or `php artisan generations:reconcile --minutes=10`.
+- **Testing Keywords:** In `local` / `development` environments, the studio suggestion bar includes Pixelforge test keywords (`[succeed]`, `[fail]`, `[slow]`, `[duplicate]`, `[overloaded]`, `[blocked]`).
 
-## Agentic Development
-
-Laravel's predictable structure and conventions make it ideal for AI coding agents like Claude Code, Cursor, and GitHub Copilot. Install [Laravel Boost](https://laravel.com/docs/ai) to supercharge your AI workflow:
+## Verification
 
 ```bash
-composer require laravel/boost --dev
-
-php artisan boost:install
+php artisan test
+php vendor/bin/pint --test
+npx eslint resources/js
+npx vue-tsc --noEmit
+npm run format:check
+npm run build
 ```
-
-Boost provides your agent 15+ tools and skills that help agents build Laravel applications while following best practices.
-
-## Contributing
-
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
-
-## Code of Conduct
-
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
-
-## Security Vulnerabilities
-
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
-
-## License
-
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).

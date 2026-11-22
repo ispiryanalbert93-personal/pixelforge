@@ -15,6 +15,10 @@ class FinalizeWalletSettlement
 
     /**
      * Atomically finalize a generation hold as either a charge or a full release.
+     *
+     * Negative-balance policy: if provider rates rise mid-flight after a hold was placed or a timed-out
+     * generation recovers via webhook after its hold was released, actual cost is still charged in full
+     * (even if balance dips below zero) so customer billing and /v1/usage reconciliation remain exact.
      */
     public function handle(
         Generation $generation,

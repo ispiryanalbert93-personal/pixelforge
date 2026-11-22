@@ -31,7 +31,9 @@ class PixelforgeApiException extends RuntimeException
         $error = is_array($payloadArray['error'] ?? null) ? $payloadArray['error'] : [];
 
         $code = (string) ($error['code'] ?? ($status === 503 ? 'overloaded' : 'api_error'));
-        $message = (string) ($error['message'] ?? ($response->body() !== '' ? $response->body() : "Pixelforge API error ({$status})."));
+        $message = is_string($error['message'] ?? null) && trim($error['message']) !== ''
+            ? $error['message']
+            : "Pixelforge API error ({$status}).";
 
         $retryAfterHeader = $response->header('Retry-After');
         $retryAfterSeconds = is_numeric($retryAfterHeader)
@@ -68,5 +70,10 @@ class PixelforgeApiException extends RuntimeException
     public function isTransientServerError(): bool
     {
         return $this->httpStatus >= 500;
+    }
+
+    public function isAmbiguousOutcome(): bool
+    {
+        return $this->httpStatus >= 500 && ! $this->isOverloaded();
     }
 }

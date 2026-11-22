@@ -19,6 +19,7 @@ Route::middleware(['auth', 'customer'])->group(function () {
         ->group(function () {
             Route::get('/history', [GenerationHistoryController::class, 'index'])->name('history');
             Route::post('/', [GenerationController::class, 'store'])->name('store');
+            Route::post('/{generation}/sync', [GenerationController::class, 'sync'])->name('sync');
         });
 
     Route::prefix('wallet')

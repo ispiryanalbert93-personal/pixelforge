@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import UserInfo from '@/components/UserInfo.vue';
 import { DropdownMenuGroup, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator } from '@/components/ui/dropdown-menu';
+import { resetRealtimeState } from '@/composables/useGenerationRealtime';
 import { disconnectEcho } from '@/lib/echo';
 import type { User } from '@/types';
 import { Link } from '@inertiajs/vue3';
@@ -11,6 +12,11 @@ interface Props {
 }
 
 defineProps<Props>();
+
+function handleLogout(): void {
+    resetRealtimeState();
+    disconnectEcho();
+}
 </script>
 
 <template>
@@ -30,7 +36,7 @@ defineProps<Props>();
     </DropdownMenuGroup>
     <DropdownMenuSeparator />
     <DropdownMenuItem :as-child="true">
-        <Link class="block w-full" method="post" :href="route('logout')" as="button" @click="disconnectEcho">
+        <Link class="block w-full" method="post" :href="route('logout')" as="button" @click="handleLogout">
             <LogOut class="mr-2 h-4 w-4" />
             Log out
         </Link>

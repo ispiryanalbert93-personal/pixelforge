@@ -1,21 +1,12 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { CreditCard, Plus } from 'lucide-vue-next';
-import { useWalletState } from '@/composables/useWalletState';
 import { Button } from '@/components/ui/button';
-import {
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem
-} from '@/components/ui/sidebar';
-import {
-    Tooltip,
-    TooltipContent,
-    TooltipProvider,
-    TooltipTrigger
-} from '@/components/ui/tooltip';
-import WalletHistoryDialog from '@/components/wallet/WalletHistoryDialog.vue';
+import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import TopUpWalletDialog from '@/components/wallet/TopUpWalletDialog.vue';
+import WalletHistoryDialog from '@/components/wallet/WalletHistoryDialog.vue';
+import { useWalletState } from '@/composables/useWalletState';
+import { CreditCard, Plus } from 'lucide-vue-next';
+import { ref } from 'vue';
 
 const { balanceFormatted, reservedNano, reservedFormatted } = useWalletState();
 

@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { watch } from 'vue';
-import { usePage } from '@inertiajs/vue3';
-import type { SharedData } from '@/types';
 import { toast } from '@/components/ui/sonner';
+import type { SharedData } from '@/types';
+import { usePage } from '@inertiajs/vue3';
+import { watch } from 'vue';
 
 const page = usePage<SharedData>();
 

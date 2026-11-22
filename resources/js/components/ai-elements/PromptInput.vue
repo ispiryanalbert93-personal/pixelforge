@@ -42,6 +42,8 @@ const draftRefUrl = ref('');
 const appName = computed(() => page.props.name);
 const isDevelopment = computed(() => Boolean(page.props.is_development));
 const canAddMoreRefs = computed(() => props.referenceImages.length < props.pricingConfig.max_reference_images);
+const promptCodePoints = computed(() => Array.from(props.prompt).length);
+const isPromptTooLong = computed(() => promptCodePoints.value > 4000);
 
 function displayRefLabel(url: string): string {
     try {
@@ -150,7 +152,6 @@ function handleTextareaKeydown(event: KeyboardEvent): void {
                 <Textarea
                     :model-value="prompt"
                     rows="2"
-                    maxlength="4000"
                     :placeholder="`Ask ${appName} to generate an image...`"
                     class="min-h-[64px] resize-none border-0 bg-transparent p-1 text-sm shadow-none focus-visible:ring-0"
                     @update:model-value="(val) => emit('update:prompt', String(val))"
@@ -239,10 +240,13 @@ function handleTextareaKeydown(event: KeyboardEvent): void {
         </form>
 
         <!-- Prompt / Size / Quality Field Errors -->
-        <div v-if="errors?.prompt || errors?.size || errors?.quality" class="space-y-0.5 px-2">
-            <p v-if="errors.prompt" class="text-xs text-destructive">{{ errors.prompt }}</p>
-            <p v-if="errors.size" class="text-xs text-destructive">{{ errors.size }}</p>
-            <p v-if="errors.quality" class="text-xs text-destructive">{{ errors.quality }}</p>
+        <div v-if="isPromptTooLong || errors?.prompt || errors?.size || errors?.quality" class="space-y-0.5 px-2">
+            <p v-if="isPromptTooLong" class="text-xs text-destructive">
+                Prompt exceeds the 4,000-character limit ({{ promptCodePoints.toLocaleString() }} / 4,000).
+            </p>
+            <p v-if="errors?.prompt" class="text-xs text-destructive">{{ errors.prompt }}</p>
+            <p v-if="errors?.size" class="text-xs text-destructive">{{ errors.size }}</p>
+            <p v-if="errors?.quality" class="text-xs text-destructive">{{ errors.quality }}</p>
         </div>
     </div>
 </template>

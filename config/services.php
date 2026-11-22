@@ -39,7 +39,7 @@ return [
         'base_url' => env('PIXELFORGE_BASE_URL', 'https://pixelforge.promptedit.dev/v1'),
         'api_key' => env('PIXELFORGE_API_KEY'),
         'webhook_secret' => env('PIXELFORGE_WEBHOOK_SECRET'),
-        'requests_enabled' => filter_var(env('PIXELFORGE_REQUESTS_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'requests_enabled' => filter_var(env('PIXELFORGE_REQUESTS_ENABLED', true), FILTER_VALIDATE_BOOL),
         'pricing_cache_ttl' => (int) env('PIXELFORGE_PRICING_CACHE_TTL', 3600),
     ],
 

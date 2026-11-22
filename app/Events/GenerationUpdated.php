@@ -50,7 +50,7 @@ class GenerationUpdated implements ShouldBroadcastNow
     public function broadcastWith(): array
     {
         $generation = $this->generation->fresh() ?? $this->generation;
-        $user = $generation->user()->firstOrFail();
+        $user = $generation->user()->with('wallet')->firstOrFail();
 
         return [
             'generation' => GenerationResource::make($generation)->resolve(),

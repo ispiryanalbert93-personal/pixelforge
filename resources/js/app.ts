@@ -1,5 +1,5 @@
-import '../css/app.css';
 import 'vue-sonner/style.css';
+import '../css/app.css';
 
 import FlashMessages from '@/components/FlashMessages.vue';
 import { Toaster } from '@/components/ui/sonner';

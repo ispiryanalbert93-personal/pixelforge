@@ -37,6 +37,7 @@ class GenerationHistoryResource extends JsonResource
                 'actual_user_cost_usd',
                 'actual_user_cost_formatted',
                 'image_url',
+                'image_url_expires_at',
                 'error_message',
                 'created_at',
             ]),

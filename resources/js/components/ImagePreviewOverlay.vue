@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
-import { Download, Loader2, X } from 'lucide-vue-next';
 import { Button } from '@/components/ui/button';
+import { Download, ImageOff, Loader2, X } from 'lucide-vue-next';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 const props = defineProps<{
     open: boolean;
@@ -15,6 +15,14 @@ const emit = defineEmits<{
 }>();
 
 const isDownloading = ref(false);
+const imageLoadError = ref(false);
+
+watch(
+    () => props.imageUrl,
+    () => {
+        imageLoadError.value = false;
+    },
+);
 
 watch(
     () => props.open,
@@ -119,13 +127,7 @@ onBeforeUnmount(() => {
                     </p>
 
                     <div class="flex shrink-0 items-center gap-2">
-                        <Button
-                            type="button"
-                            size="sm"
-                            variant="secondary"
-                            :disabled="isDownloading"
-                            @click="downloadImage"
-                        >
+                        <Button type="button" size="sm" variant="secondary" :disabled="isDownloading" @click="downloadImage">
                             <Loader2 v-if="isDownloading" class="size-4 animate-spin" />
                             <Download v-else class="size-4" />
                             Download
@@ -147,10 +149,20 @@ onBeforeUnmount(() => {
 
                 <!-- Centered Image -->
                 <div class="flex min-h-0 flex-1 items-center justify-center p-4 md:p-8" @click.self="close">
+                    <div
+                        v-if="imageLoadError"
+                        class="flex max-w-sm flex-col items-center gap-2 rounded-xl border border-white/15 bg-black/60 p-8 text-center text-white"
+                    >
+                        <ImageOff class="size-8 text-white/70" />
+                        <p class="text-sm font-medium">Image unavailable</p>
+                        <p class="text-xs text-white/70">The signed image URL may have expired (24h TTL) or failed to load.</p>
+                    </div>
                     <img
+                        v-else
                         :src="imageUrl"
                         :alt="prompt ?? 'Generated image preview'"
                         class="max-h-full max-w-full rounded-lg object-contain shadow-2xl"
+                        @error="imageLoadError = true"
                     />
                 </div>
             </div>

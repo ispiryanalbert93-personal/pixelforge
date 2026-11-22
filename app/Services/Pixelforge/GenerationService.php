@@ -9,12 +9,18 @@ use App\Actions\Wallet\SettleWalletCharge;
 use App\Enums\GenerationStatus;
 use App\Enums\ImageQuality;
 use App\Enums\ImageSize;
+use App\Enums\WalletTransactionType;
 use App\Events\GenerationUpdated;
 use App\Exceptions\PixelforgeApiException;
+use App\Jobs\SubmitGenerationToPixelforge;
 use App\Models\Generation;
 use App\Models\User;
+use App\Models\Wallet;
+use App\Models\WalletTransaction;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
+use RuntimeException;
 
 class GenerationService
 {
@@ -29,7 +35,7 @@ class GenerationService
     ) {}
 
     /**
-     * Create a generation, hold max estimated credits, and submit it to Pixelforge.
+     * Create a generation, hold max estimated credits, and dispatch submission to Pixelforge.
      *
      * @param  array<int, string>  $referenceImages
      */
@@ -64,28 +70,67 @@ class GenerationService
             $estimate,
         );
 
-        $payload = [
-            'prompt' => $prompt,
-            'size' => $size->value,
-            'quality' => $quality->value,
-            'reference_images' => $references,
-            'metadata' => [
-                'local_generation_id' => (string) $generation->id,
-                'user_id' => (string) $user->id,
-            ],
-        ];
+        SubmitGenerationToPixelforge::dispatch($generation->id);
+
+        return $generation->fresh() ?? $generation;
+    }
+
+    /**
+     * Submit an existing queued generation to Pixelforge with Idempotency-Key.
+     *
+     * Returns a retry delay (in seconds) when the queued job should release and retry, or null when finished.
+     */
+    public function submitGeneration(
+        int $generationId,
+        bool $isAsyncQueue = false,
+        int $attempt = 1,
+        int $maxTries = 1,
+    ): ?int {
+        $generation = Generation::query()->find($generationId);
+
+        if ($generation === null || $generation->status->isTerminal() || $generation->pixelforge_id !== null) {
+            return null;
+        }
+
+        $payload = $this->buildSubmissionPayload($generation);
 
         try {
             $response = $this->client->sendGeneration($payload, $generation->idempotency_key);
+        } catch (PixelforgeApiException|ConnectionException $exception) {
+            return $this->handleSubmissionException($generation, $exception, $isAsyncQueue, $attempt, $maxTries);
+        }
+
+        $recalculatedMaxCostNano = $this->handleRateDrift($generation, $response);
+
+        $this->updateFromProvider($generation, $response, $recalculatedMaxCostNano);
+
+        return null;
+    }
+
+    /**
+     * Synchronize a generation directly from Pixelforge using GET /v1/generations/{id}
+     * (or Idempotency-Key replay if submission never recorded a provider ID).
+     */
+    public function syncFromProvider(Generation $generation): Generation
+    {
+        if ($generation->status->isTerminal() && ! $generation->isAmbiguousLocalFailure()) {
+            return $generation;
+        }
+
+        if ($generation->pixelforge_id !== null) {
+            $response = $this->client->getGeneration($generation->pixelforge_id);
 
             return $this->updateFromProvider($generation, $response);
-        } catch (PixelforgeApiException|ConnectionException $exception) {
-            [$errorCode, $errorMessage] = $exception instanceof PixelforgeApiException
-                ? [$exception->errorCode, $exception->errorMessage]
-                : ['connection_error', $exception->getMessage()];
-
-            return $this->markAsFailed($generation, $errorCode, $errorMessage);
         }
+
+        $response = $this->client->sendGeneration(
+            $this->buildSubmissionPayload($generation),
+            $generation->idempotency_key,
+        );
+
+        $recalculatedMaxCostNano = $this->handleRateDrift($generation, $response);
+
+        return $this->updateFromProvider($generation, $response, $recalculatedMaxCostNano);
     }
 
     /**
@@ -93,40 +138,300 @@ class GenerationService
      *
      * @param  array<string, mixed>  $data
      */
-    public function updateFromProvider(Generation $generation, array $data): Generation
-    {
-        [$updated, $shouldBroadcast] = $this->lockGeneration->handle($generation, function (Generation $locked) use ($data): array {
-            $previousStatus = $locked->status;
-            $previousErrorCode = $locked->error_code;
+    public function updateFromProvider(
+        Generation $generation,
+        array $data,
+        ?int $recalculatedMaxCostNano = null,
+    ): Generation {
+        [$updated, $shouldBroadcast] = $this->lockGeneration->handle(
+            $generation,
+            function (Generation $locked, Wallet $lockedWallet) use ($data, $recalculatedMaxCostNano): array {
+                $previousStatus = $locked->status;
+                $previousErrorCode = $locked->error_code;
+                $previousErrorMessage = $locked->error_message;
+                $wasAmbiguousLocalFailure = $locked->isAmbiguousLocalFailure();
 
-            if ($locked->pixelforge_id === null && filled($data['id'] ?? null)) {
-                $locked->pixelforge_id = (string) $data['id'];
-            }
-
-            $incomingStatus = GenerationStatus::tryFrom((string) ($data['status'] ?? ''));
-
-            if ($incomingStatus === null || $locked->status->isTerminal()) {
-                if ($locked->isDirty()) {
-                    $locked->save();
+                if ($locked->pixelforge_id === null && filled($data['id'] ?? null)) {
+                    $locked->pixelforge_id = (string) $data['id'];
                 }
 
-                return [$locked->refresh(), false];
-            }
+                $incomingStatus = GenerationStatus::tryFrom((string) ($data['status'] ?? ''));
 
-            $this->updateStatus($locked, $incomingStatus, $data);
-            $locked->refresh();
+                if ($incomingStatus === null) {
+                    if ($locked->isDirty()) {
+                        $locked->save();
+                    }
 
-            $changed = $locked->status !== $previousStatus
-                || ($previousErrorCode !== null && $locked->error_code === null);
+                    return [$locked->refresh(), false];
+                }
 
-            return [$locked, $changed];
-        });
+                // Recover from an ambiguous local submit failure (e.g. POST timeout) if Pixelforge later reports the generation.
+                if ($locked->status === GenerationStatus::Failed) {
+                    if (! $wasAmbiguousLocalFailure) {
+                        if ($locked->isDirty()) {
+                            $locked->save();
+                        }
+
+                        return [$locked->refresh(), false];
+                    }
+
+                    $this->recoverFromAmbiguousFailure($locked, $incomingStatus, $data);
+                    $locked->refresh();
+
+                    return [$locked, true];
+                }
+
+                if ($locked->status->isTerminal()) {
+                    if ($locked->isDirty()) {
+                        $locked->save();
+                    }
+
+                    return [$locked->refresh(), false];
+                }
+
+                $this->applyRateAdjustment($locked, $lockedWallet, $data, $recalculatedMaxCostNano);
+                $this->updateStatus($locked, $incomingStatus, $data);
+                $locked->refresh();
+
+                $changed = $locked->status !== $previousStatus
+                    || ($previousErrorCode !== null && $locked->error_code === null)
+                    || ($previousErrorMessage !== null && $locked->error_message === null);
+
+                return [$locked, $changed];
+            },
+        );
 
         if ($shouldBroadcast) {
             GenerationUpdated::dispatchSafely($updated);
         }
 
         return $updated;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function buildSubmissionPayload(Generation $generation): array
+    {
+        return [
+            'prompt' => $generation->prompt,
+            'size' => $generation->size->value,
+            'quality' => $generation->quality->value,
+            'reference_images' => $generation->reference_images ?? [],
+            'metadata' => [
+                'local_generation_id' => (string) $generation->id,
+                'user_id' => (string) $generation->user_id,
+            ],
+        ];
+    }
+
+    private function handleSubmissionException(
+        Generation $generation,
+        PixelforgeApiException|ConnectionException $exception,
+        bool $isAsyncQueue,
+        int $attempt,
+        int $maxTries,
+    ): ?int {
+        $isRetryable = $exception instanceof ConnectionException
+            || $exception->isRetryableRateOrConcurrencyLimit()
+            || $exception->isOverloaded()
+            || $exception->isTransientServerError();
+
+        if ($isAsyncQueue && $isRetryable && $attempt < $maxTries) {
+            $delay = $this->resolveRetryDelaySeconds($exception, $attempt);
+            $this->markRetryWaiting($generation, $delay);
+
+            return $delay;
+        }
+
+        $errorCode = $exception instanceof PixelforgeApiException
+            ? $exception->errorCode
+            : 'connection_error';
+
+        $providerMessage = $exception instanceof PixelforgeApiException
+            ? $exception->errorMessage
+            : null;
+
+        Log::warning('Pixelforge generation submission failed.', [
+            'generation_id' => $generation->id,
+            'error_code' => $errorCode,
+            'message' => $exception->getMessage(),
+            'attempt' => $attempt,
+        ]);
+
+        $this->markAsFailed(
+            $generation,
+            $errorCode,
+            ErrorFormatter::forGeneration($errorCode, $providerMessage),
+        );
+
+        return null;
+    }
+
+    private function resolveRetryDelaySeconds(PixelforgeApiException|ConnectionException $exception, int $attempt): int
+    {
+        if ($exception instanceof PixelforgeApiException && $exception->retryAfterSeconds !== null) {
+            return min(60, max(1, $exception->retryAfterSeconds));
+        }
+
+        return min(60, (2 ** max(1, $attempt)) * 2);
+    }
+
+    private function markRetryWaiting(Generation $generation, int $delaySeconds): void
+    {
+        [$updated, $shouldBroadcast] = $this->lockGeneration->handle(
+            $generation,
+            function (Generation $locked) use ($delaySeconds): array {
+                if ($locked->status->isTerminal() || $locked->pixelforge_id !== null) {
+                    return [$locked, false];
+                }
+
+                $locked->forceFill([
+                    'error_message' => "Waiting for Pixelforge capacity (retrying in {$delaySeconds}s)...",
+                ])->save();
+
+                return [$locked->refresh(), true];
+            },
+        );
+
+        if ($shouldBroadcast) {
+            GenerationUpdated::dispatchSafely($updated);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $response
+     */
+    private function handleRateDrift(Generation $generation, array $response): ?int
+    {
+        $responseRates = $response['rates'] ?? null;
+
+        if (! is_array($responseRates) || $responseRates === [] || $responseRates === $generation->locked_rates) {
+            return null;
+        }
+
+        Log::warning('Pixelforge rates changed while pricing cache was warm; invalidating pricing cache.', [
+            'generation_id' => $generation->id,
+            'cached_rates' => $generation->locked_rates,
+            'provider_rates' => $responseRates,
+        ]);
+
+        $this->pricingService->forgetCache();
+
+        try {
+            $freshConfig = $this->pricingService->getPricingConfig();
+            $updatedConfig = [...$freshConfig, 'rates' => $responseRates];
+
+            $estimate = $this->pricingCalculator->estimate(
+                prompt: $generation->prompt,
+                size: $generation->size,
+                quality: $generation->quality,
+                referenceImageCount: count($generation->reference_images ?? []),
+                pricingConfig: $updatedConfig,
+            );
+
+            return $estimate->maxUserCostNano;
+        } catch (PixelforgeApiException|ConnectionException|\InvalidArgumentException) {
+            return null;
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function applyRateAdjustment(
+        Generation $locked,
+        Wallet $lockedWallet,
+        array $data,
+        ?int $recalculatedMaxCostNano,
+    ): void {
+        if (is_array($data['rates'] ?? null) && $data['rates'] !== []) {
+            $locked->locked_rates = $data['rates'];
+        }
+
+        if ($recalculatedMaxCostNano === null || $locked->settled_at !== null) {
+            return;
+        }
+
+        $currentReserved = (int) $locked->reserved_user_cost_nano;
+        if ($recalculatedMaxCostNano <= $currentReserved) {
+            return;
+        }
+
+        $delta = $recalculatedMaxCostNano - $currentReserved;
+        $locked->estimated_max_user_cost_nano = $recalculatedMaxCostNano;
+
+        if ((int) $lockedWallet->balance_nanodollars < $delta) {
+            Log::warning('Insufficient wallet balance to cover mid-flight Pixelforge rate increase hold delta.', [
+                'generation_id' => $locked->id,
+                'delta_nano' => $delta,
+                'available_nano' => $lockedWallet->balance_nanodollars,
+            ]);
+
+            return;
+        }
+
+        $lockedWallet->balance_nanodollars -= $delta;
+        $lockedWallet->reserved_nanodollars += $delta;
+        $lockedWallet->save();
+
+        $locked->reserved_user_cost_nano = $recalculatedMaxCostNano;
+
+        WalletTransaction::create([
+            'user_id' => $lockedWallet->user_id,
+            'wallet_id' => $lockedWallet->id,
+            'generation_id' => $locked->id,
+            'type' => WalletTransactionType::Hold,
+            'amount_nanodollars' => -$delta,
+            'balance_after_nanodollars' => $lockedWallet->balance_nanodollars,
+            'reserved_after_nanodollars' => $lockedWallet->reserved_nanodollars,
+            'description' => "Rate adjustment hold for generation {$locked->id}",
+        ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     */
+    private function recoverFromAmbiguousFailure(Generation $locked, GenerationStatus $incomingStatus, array $data): void
+    {
+        Log::info('Recovering generation from ambiguous local submit failure via upstream provider payload.', [
+            'generation_id' => $locked->id,
+            'pixelforge_id' => $locked->pixelforge_id,
+            'incoming_status' => $incomingStatus->value,
+        ]);
+
+        if ($incomingStatus === GenerationStatus::Failed) {
+            $error = is_array($data['error'] ?? null) ? $data['error'] : [];
+            $errorCode = (string) ($error['code'] ?? 'generation_failed');
+            $providerMessage = is_string($error['message'] ?? null) ? $error['message'] : null;
+
+            $locked->forceFill([
+                'error_code' => $errorCode,
+                'error_message' => ErrorFormatter::forGeneration($errorCode, $providerMessage),
+                'usage' => is_array($data['usage'] ?? null) ? $data['usage'] : $locked->usage,
+                'completed_at' => filled($data['completed_at'] ?? null)
+                    ? Carbon::parse((string) $data['completed_at'])
+                    : ($locked->completed_at ?? now()),
+            ])->save();
+
+            return;
+        }
+
+        $locked->forceFill([
+            'status' => GenerationStatus::Queued,
+            'error_code' => null,
+            'error_message' => null,
+            'settled_at' => null,
+            'actual_provider_cost_nano' => null,
+            'actual_user_cost_nano' => null,
+            'completed_at' => null,
+        ])->save();
+
+        if (is_array($data['rates'] ?? null) && $data['rates'] !== []) {
+            $locked->locked_rates = $data['rates'];
+        }
+
+        $this->updateStatus($locked, $incomingStatus, $data);
     }
 
     private function markAsFailed(Generation $generation, string $errorCode, string $errorMessage): Generation
@@ -156,10 +461,6 @@ class GenerationService
      */
     private function updateStatus(Generation $locked, GenerationStatus $status, array $data): void
     {
-        if (is_array($data['rates'] ?? null) && $data['rates'] !== [] && $status !== GenerationStatus::Failed) {
-            $locked->locked_rates = $data['rates'];
-        }
-
         if (! $status->isTerminal()) {
             if ($locked->status === $status || $locked->canTransitionTo($status)) {
                 $locked->forceFill([
@@ -184,17 +485,15 @@ class GenerationService
 
         if ($status === GenerationStatus::Failed) {
             $error = is_array($data['error'] ?? null) ? $data['error'] : [];
-            $errorCode = (string) ($error['code'] ?? $data['error_code'] ?? $locked->error_code ?? 'generation_failed');
-            $errorMessage = isset($error['message']) || isset($data['error_message'])
-                ? (string) ($error['message'] ?? $data['error_message'])
-                : $locked->error_message;
+            $errorCode = (string) ($error['code'] ?? $locked->error_code ?? 'generation_failed');
+            $providerMessage = is_string($error['message'] ?? null) ? $error['message'] : null;
+            $errorMessage = ErrorFormatter::forGeneration($errorCode, $providerMessage ?? $locked->error_message);
 
             $this->failGeneration->handle($locked, $errorCode, $errorMessage, $completedAt, $usage);
 
             return;
         }
 
-        // Succeeded
         $locked->forceFill([
             'status' => GenerationStatus::Succeeded,
             'error_code' => null,
@@ -209,7 +508,11 @@ class GenerationService
 
         $lockedRates = is_array($locked->locked_rates) && $locked->locked_rates !== []
             ? $locked->locked_rates
-            : $this->pricingService->currentRates();
+            : (is_array($data['rates'] ?? null) ? $data['rates'] : []);
+
+        if ($lockedRates === []) {
+            throw new RuntimeException("Cannot settle generation {$locked->id}: missing locked pricing rates.");
+        }
 
         $breakdown = $this->pricingCalculator->calculateActual(
             usage: $locked->usage ?? [],

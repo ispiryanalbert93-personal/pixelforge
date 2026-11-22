@@ -26,7 +26,7 @@ export interface FlashMessages {
 export interface SharedData extends PageProps {
     name: string;
     is_development: boolean;
-    quote: { message: string; author: string };
+    quote?: { message: string; author: string };
     auth: Auth;
     flash?: FlashMessages;
     ziggy: {
@@ -110,8 +110,15 @@ export interface GenerationHistoryRow {
     actual_user_cost_usd: string | null;
     actual_user_cost_formatted: string | null;
     image_url: string | null;
+    image_url_expires_at: string | null;
     error_message: string | null;
     created_at: string | null;
+}
+
+export interface GenerationHistoryFilters {
+    search: string | null;
+    status: 'all' | 'active' | 'succeeded' | 'failed';
+    per_page: number;
 }
 
 export type WalletTransactionType = 'topup' | 'hold' | 'charge' | 'release';

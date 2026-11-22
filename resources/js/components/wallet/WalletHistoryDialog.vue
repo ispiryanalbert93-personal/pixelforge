@@ -1,39 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, ref, watch } from 'vue';
-import {
-    AlertCircle,
-    ChevronLeft,
-    ChevronRight,
-    CreditCard,
-    Loader2
-} from 'lucide-vue-next';
-import type { WalletTransaction, WalletTransactionType } from '@/types';
-import { formatDateTime, formatSignedUsd } from '@/lib/pricing';
-import {
-    Dialog,
-    DialogContent,
-    DialogDescription,
-    DialogHeader,
-    DialogTitle
-} from '@/components/ui/dialog';
-import {
-    Empty,
-    EmptyDescription,
-    EmptyHeader,
-    EmptyMedia,
-    EmptyTitle
-} from '@/components/ui/empty';
-import {
-    Table,
-    TableBody,
-    TableCell,
-    TableHead,
-    TableHeader,
-    TableRow
-} from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from '@/components/ui/empty';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { formatDateTime, formatSignedUsd } from '@/lib/pricing';
+import type { WalletTransaction, WalletTransactionType } from '@/types';
+import { AlertCircle, ChevronLeft, ChevronRight, CreditCard, Loader2 } from 'lucide-vue-next';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 interface PaginationMeta {
     current_page: number;

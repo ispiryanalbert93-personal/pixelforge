@@ -1,19 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue';
-import { Link, usePage } from '@inertiajs/vue3';
-import { type NavItem, type SharedData } from '@/types';
-import { BarChart3, ShieldCheck } from 'lucide-vue-next';
-import {
-    Sidebar,
-    SidebarContent,
-    SidebarFooter,
-    SidebarHeader,
-    SidebarMenu,
-    SidebarMenuButton,
-    SidebarMenuItem
-} from '@/components/ui/sidebar';
 import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarMenu, SidebarMenuButton, SidebarMenuItem } from '@/components/ui/sidebar';
+import { type NavItem, type SharedData } from '@/types';
+import { Link, usePage } from '@inertiajs/vue3';
+import { BarChart3, ShieldCheck } from 'lucide-vue-next';
+import { computed } from 'vue';
 
 const page = usePage<SharedData>();
 

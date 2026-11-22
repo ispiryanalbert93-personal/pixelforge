@@ -92,6 +92,11 @@ class PricingService
         return $this->getPricingConfig()['rates'];
     }
 
+    public function forgetCache(): void
+    {
+        Cache::forget(self::CACHE_KEY);
+    }
+
     /**
      * Validate and normalize a raw GET /v1/pricing payload.
      *

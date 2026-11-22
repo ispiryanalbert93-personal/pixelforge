@@ -1,9 +1,8 @@
-import { clearLiveWallet, setLiveWallet } from '@/composables/useWalletState';
+import { setLiveWallet } from '@/composables/useWalletState';
 import { getEcho } from '@/lib/echo';
-import type { Generation, GenerationHistoryRow, WalletData } from '@/types';
-import { computed, onBeforeUnmount, ref, watch } from 'vue';
-
-export type RealtimeTransport = 'websocket' | 'idle';
+import { mergeGenerationMonotonic, toHistoryRow } from '@/lib/generation';
+import type { Generation, GenerationHistoryFilters, GenerationHistoryRow, WalletData } from '@/types';
+import { onBeforeUnmount, ref, watch } from 'vue';
 
 export interface GenerationUpdatedBroadcastPayload {
     generation: Generation;
@@ -11,158 +10,162 @@ export interface GenerationUpdatedBroadcastPayload {
     has_active_generations: boolean;
 }
 
-interface PusherStateChange {
-    previous: string;
-    current: string;
-}
+type GenerationListener = (payload: GenerationUpdatedBroadcastPayload) => void;
 
-interface PusherConnectionLike {
-    state?: string;
-    bind: (event: string, callback: (data?: unknown) => void) => void;
-    unbind: (event: string, callback: (data?: unknown) => void) => void;
-}
+const liveGenerationsById = ref<Record<number, Generation>>({});
+const listeners = new Set<GenerationListener>();
 
-const EMPTY_WALLET: WalletData = {
-    balance_nanodollars: 0,
-    balance_usd: '0.00',
-    balance_formatted: '$0.00',
-    reserved_nanodollars: 0,
-    reserved_usd: '0.00',
-    reserved_formatted: '$0.00',
-};
+let activeUserId: number | undefined;
+let subscribedChannel: string | null = null;
 
-export function useGenerationRealtime(
-    initialGenerations: () => GenerationHistoryRow[],
-    initialWallet: (() => WalletData) | undefined,
-    initialHasActive: () => boolean,
-    userId: () => number | undefined,
-) {
-    const generations = ref<GenerationHistoryRow[]>(initialGenerations());
-    const wallet = ref<WalletData>(initialWallet ? initialWallet() : EMPTY_WALLET);
-    const hasActiveGenerations = ref<boolean>(initialHasActive());
-    const wsHealthy = ref(false);
-
-    const transport = computed<RealtimeTransport>(() => (hasActiveGenerations.value && wsHealthy.value ? 'websocket' : 'idle'));
-
-    let subscribedChannel: string | null = null;
-    let boundConnection: PusherConnectionLike | null = null;
-    let stateChangeHandler: ((data?: unknown) => void) | null = null;
-    let errorHandler: (() => void) | null = null;
-
-    function upsertGeneration(nextGen: Generation): void {
-        const index = generations.value.findIndex((g) => g.id === nextGen.id);
-        if (index >= 0) {
-            const copy = [...generations.value];
-            copy[index] = nextGen;
-            generations.value = copy;
-            return;
-        }
-
-        generations.value = [nextGen, ...generations.value];
+function ensureChannelSubscription(uid: number | undefined): void {
+    if (!uid) {
+        teardownSharedChannel();
+        return;
     }
 
-    function teardownRealtime(): void {
-        if (boundConnection) {
-            if (stateChangeHandler) {
-                boundConnection.unbind('state_change', stateChangeHandler);
-            }
-            if (errorHandler) {
-                boundConnection.unbind('error', errorHandler);
-            }
-            boundConnection = null;
-        }
-
-        stateChangeHandler = null;
-        errorHandler = null;
-
-        if (subscribedChannel) {
-            const echo = getEcho();
-            echo?.leave(subscribedChannel);
-            subscribedChannel = null;
-        }
-
-        wsHealthy.value = false;
+    if (activeUserId === uid && subscribedChannel !== null) {
+        return;
     }
 
-    function setupRealtime(uid: number | undefined): void {
-        teardownRealtime();
+    teardownSharedChannel();
 
-        if (!uid) {
-            return;
-        }
+    const echo = getEcho();
+    if (!echo) {
+        return;
+    }
 
-        const echo = getEcho();
-        if (!echo) {
-            return;
-        }
+    const channelName = `App.Models.User.${uid}`;
+    activeUserId = uid;
+    subscribedChannel = channelName;
 
-        const channelName = `App.Models.User.${uid}`;
-        subscribedChannel = channelName;
+    echo.private(channelName).listen('.generation.updated', (payload: GenerationUpdatedBroadcastPayload) => {
+        const merged = mergeGenerationMonotonic(liveGenerationsById.value[payload.generation.id], payload.generation);
 
-        echo.private(channelName).listen('.generation.updated', (payload: GenerationUpdatedBroadcastPayload) => {
-            upsertGeneration(payload.generation);
-            wallet.value = payload.wallet;
-            hasActiveGenerations.value = payload.has_active_generations;
-            setLiveWallet(payload.wallet);
-        });
-
-        const connector = echo.connector as unknown as { pusher?: { connection?: PusherConnectionLike } };
-        const connection = connector?.pusher?.connection;
-
-        if (!connection) {
-            return;
-        }
-
-        boundConnection = connection;
-        wsHealthy.value = connection.state === 'connected';
-
-        stateChangeHandler = (raw?: unknown) => {
-            const stateChange = raw as PusherStateChange | undefined;
-            const current = stateChange?.current;
-
-            if (current === 'connected') {
-                wsHealthy.value = true;
-                return;
-            }
-
-            if (current === 'unavailable' || current === 'failed' || current === 'disconnected') {
-                wsHealthy.value = false;
-            }
+        liveGenerationsById.value = {
+            ...liveGenerationsById.value,
+            [merged.id]: merged,
         };
 
-        errorHandler = () => {
-            wsHealthy.value = false;
+        setLiveWallet(payload.wallet);
+
+        const mergedPayload: GenerationUpdatedBroadcastPayload = {
+            ...payload,
+            generation: merged,
         };
 
-        connection.bind('state_change', stateChangeHandler);
-        connection.bind('error', errorHandler);
-    }
-
-    watch([initialGenerations, () => initialWallet?.(), initialHasActive], ([nextGens, nextWallet, nextActive]) => {
-        generations.value = nextGens;
-        if (nextWallet) {
-            wallet.value = nextWallet;
-        }
-        hasActiveGenerations.value = nextActive;
-        clearLiveWallet();
+        listeners.forEach((listener) => listener(mergedPayload));
     });
+}
+
+function teardownSharedChannel(): void {
+    if (subscribedChannel) {
+        getEcho()?.leave(subscribedChannel);
+        subscribedChannel = null;
+    }
+    activeUserId = undefined;
+}
+
+export function resetRealtimeState(): void {
+    teardownSharedChannel();
+    liveGenerationsById.value = {};
+}
+
+function matchesHistoryFilters(row: GenerationHistoryRow, filters: GenerationHistoryFilters): boolean {
+    if (filters.status === 'active' && row.status !== 'queued' && row.status !== 'processing') {
+        return false;
+    }
+
+    if (filters.status === 'succeeded' && row.status !== 'succeeded') {
+        return false;
+    }
+
+    if (filters.status === 'failed' && row.status !== 'failed') {
+        return false;
+    }
+
+    const search = filters.search?.trim() ?? '';
+    if (search !== '' && row.pixelforge_id !== search) {
+        return false;
+    }
+
+    return true;
+}
+
+export function useGenerationRealtimeSubscription(userId: () => number | undefined, onUpdate?: GenerationListener) {
+    if (onUpdate) {
+        listeners.add(onUpdate);
+    }
 
     watch(
         userId,
         (uid) => {
-            setupRealtime(uid);
+            ensureChannelSubscription(uid);
         },
         { immediate: true },
     );
 
     onBeforeUnmount(() => {
-        teardownRealtime();
+        if (onUpdate) {
+            listeners.delete(onUpdate);
+        }
+
+        if (listeners.size === 0) {
+            teardownSharedChannel();
+        }
+    });
+
+    function getMergedGeneration(generation: Generation | null): Generation | null {
+        if (!generation) {
+            return null;
+        }
+
+        const cached = liveGenerationsById.value[generation.id];
+
+        return cached ? mergeGenerationMonotonic(generation, cached) : generation;
+    }
+
+    return {
+        liveGenerationsById,
+        getMergedGeneration,
+    };
+}
+
+export function useGenerationRealtime(
+    initialGenerations: () => GenerationHistoryRow[],
+    filters: () => GenerationHistoryFilters,
+    currentPage: () => number,
+    userId: () => number | undefined,
+) {
+    const generations = ref<GenerationHistoryRow[]>(initialGenerations());
+
+    useGenerationRealtimeSubscription(userId, (payload) => {
+        const nextRow = toHistoryRow(payload.generation);
+        const currentFilters = filters();
+        const matches = matchesHistoryFilters(nextRow, currentFilters);
+        const index = generations.value.findIndex((g) => g.id === nextRow.id);
+
+        if (index >= 0) {
+            const copy = [...generations.value];
+            if (matches) {
+                copy[index] = nextRow;
+            } else {
+                copy.splice(index, 1);
+            }
+            generations.value = copy;
+            return;
+        }
+
+        if (currentPage() === 1 && matches) {
+            generations.value = [nextRow, ...generations.value];
+        }
+    });
+
+    watch(initialGenerations, (nextGens) => {
+        generations.value = nextGens;
     });
 
     return {
         generations,
-        wallet,
-        hasActiveGenerations,
-        transport,
     };
 }

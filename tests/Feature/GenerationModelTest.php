@@ -67,35 +67,29 @@ class GenerationModelTest extends TestCase
 
     public function test_generation_status_transitions_are_monotonic(): void
     {
-        $queuedToProcessing = Generation::factory()->create(['status' => GenerationStatus::Queued]);
-        $this->assertTrue($queuedToProcessing->transitionTo(GenerationStatus::Processing));
-        $this->assertSame(GenerationStatus::Processing, $queuedToProcessing->fresh()->status);
+        $queued = Generation::factory()->create(['status' => GenerationStatus::Queued]);
+        $this->assertTrue($queued->canTransitionTo(GenerationStatus::Processing));
+        $this->assertTrue($queued->canTransitionTo(GenerationStatus::Succeeded));
+        $this->assertTrue($queued->canTransitionTo(GenerationStatus::Failed));
+        $this->assertFalse($queued->canTransitionTo(GenerationStatus::Queued));
 
-        // Cannot regress from processing back to queued
-        $this->assertFalse($queuedToProcessing->transitionTo(GenerationStatus::Queued));
-        $this->assertSame(GenerationStatus::Processing, $queuedToProcessing->fresh()->status);
+        $processing = Generation::factory()->create(['status' => GenerationStatus::Processing]);
+        $this->assertTrue($processing->canTransitionTo(GenerationStatus::Succeeded));
+        $this->assertTrue($processing->canTransitionTo(GenerationStatus::Failed));
+        $this->assertFalse($processing->canTransitionTo(GenerationStatus::Queued));
+        $this->assertFalse($processing->canTransitionTo(GenerationStatus::Processing));
 
-        // Can advance from processing to succeeded
-        $this->assertTrue($queuedToProcessing->transitionTo(GenerationStatus::Succeeded));
-        $this->assertSame(GenerationStatus::Succeeded, $queuedToProcessing->fresh()->status);
+        $succeeded = Generation::factory()->create(['status' => GenerationStatus::Succeeded]);
+        $this->assertFalse($succeeded->canTransitionTo(GenerationStatus::Queued));
+        $this->assertFalse($succeeded->canTransitionTo(GenerationStatus::Processing));
+        $this->assertFalse($succeeded->canTransitionTo(GenerationStatus::Failed));
+        $this->assertFalse($succeeded->canTransitionTo(GenerationStatus::Succeeded));
 
-        // Terminal succeeded cannot transition anywhere
-        $this->assertFalse($queuedToProcessing->transitionTo(GenerationStatus::Failed));
-        $this->assertFalse($queuedToProcessing->transitionTo(GenerationStatus::Processing));
-        $this->assertSame(GenerationStatus::Succeeded, $queuedToProcessing->fresh()->status);
-
-        // Queued can jump directly to succeeded
-        $queuedToSucceeded = Generation::factory()->create(['status' => GenerationStatus::Queued]);
-        $this->assertTrue($queuedToSucceeded->transitionTo(GenerationStatus::Succeeded));
-        $this->assertSame(GenerationStatus::Succeeded, $queuedToSucceeded->fresh()->status);
-
-        // Queued can jump directly to failed, and failed is terminal
-        $queuedToFailed = Generation::factory()->create(['status' => GenerationStatus::Queued]);
-        $this->assertTrue($queuedToFailed->transitionTo(GenerationStatus::Failed));
-        $this->assertSame(GenerationStatus::Failed, $queuedToFailed->fresh()->status);
-        $this->assertFalse($queuedToFailed->transitionTo(GenerationStatus::Succeeded));
-        $this->assertFalse($queuedToFailed->transitionTo(GenerationStatus::Queued));
-        $this->assertSame(GenerationStatus::Failed, $queuedToFailed->fresh()->status);
+        $failed = Generation::factory()->create(['status' => GenerationStatus::Failed]);
+        $this->assertFalse($failed->canTransitionTo(GenerationStatus::Queued));
+        $this->assertFalse($failed->canTransitionTo(GenerationStatus::Processing));
+        $this->assertFalse($failed->canTransitionTo(GenerationStatus::Succeeded));
+        $this->assertFalse($failed->canTransitionTo(GenerationStatus::Failed));
     }
 
     public function test_generation_formats_money_helpers_accurately(): void

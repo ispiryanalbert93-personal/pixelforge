@@ -2,29 +2,32 @@
 
 namespace App\Actions\Generations;
 
+use App\Actions\Wallet\LockUserWallet;
 use App\Models\Generation;
-use App\Models\User;
-use Illuminate\Support\Facades\Cache;
+use App\Models\Wallet;
 use Illuminate\Support\Facades\DB;
 
 class LockGeneration
 {
+    public function __construct(
+        private readonly LockUserWallet $lockUserWallet,
+    ) {}
+
     /**
-     * Acquire cache and pessimistic DB locks (User first, then Generation) inside a transaction.
+     * Acquire pessimistic DB locks in canonical order (Wallet first, then Generation) inside one transaction.
      *
      * @template TReturn
      *
-     * @param  callable(Generation): TReturn  $callback
+     * @param  callable(Generation, Wallet): TReturn  $callback
      * @return TReturn
      */
     public function handle(Generation $generation, callable $callback): mixed
     {
-        return Cache::lock("generation-sync:{$generation->id}", 10)
-            ->block(5, fn () => DB::transaction(function () use ($generation, $callback) {
-                User::whereKey($generation->user_id)->lockForUpdate()->firstOrFail();
-                $locked = Generation::whereKey($generation->getKey())->lockForUpdate()->firstOrFail();
+        return DB::transaction(function () use ($generation, $callback) {
+            $lockedWallet = $this->lockUserWallet->handle((int) $generation->user_id);
+            $lockedGeneration = Generation::whereKey($generation->getKey())->lockForUpdate()->firstOrFail();
 
-                return $callback($locked);
-            }));
+            return $callback($lockedGeneration, $lockedWallet);
+        });
     }
 }

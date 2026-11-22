@@ -134,16 +134,14 @@ class Generation extends Model
         return $this->status->canTransitionTo($next);
     }
 
-    public function transitionTo(GenerationStatus $next): bool
+    /**
+     * Whether a local failure may have been accepted upstream (e.g. submit timeout or 5xx before receiving an ID).
+     */
+    public function isAmbiguousLocalFailure(): bool
     {
-        if (! $this->canTransitionTo($next)) {
-            return false;
-        }
-
-        $this->status = $next;
-        $this->save();
-
-        return true;
+        return $this->status === GenerationStatus::Failed
+            && $this->pixelforge_id === null
+            && in_array($this->error_code, ['connection_error', 'api_error', 'submission_uncertain'], true);
     }
 
     /**

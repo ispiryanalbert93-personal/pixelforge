@@ -2,11 +2,12 @@
 
 namespace App\Services\Pixelforge;
 
+use App\Jobs\ProcessPixelforgeWebhook;
 use App\Models\Generation;
 use App\Models\WebhookEvent;
 use Illuminate\Database\UniqueConstraintViolationException;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class WebhookService
 {
@@ -15,7 +16,7 @@ class WebhookService
     ) {}
 
     /**
-     * Process a verified Pixelforge webhook delivery idempotently.
+     * Persist and deduplicate a verified Pixelforge webhook delivery, then dispatch async processing.
      *
      * @param  array<string, mixed>  $parsedInput
      * @return array{received: true, duplicate?: true}
@@ -27,54 +28,69 @@ class WebhookService
         mixed $eventTypeHeader = null,
     ): array {
         $payload = $this->decodePayload($rawBody, $parsedInput);
-        $eventId = $this->resolveStringField($eventIdHeader, $payload['id'] ?? null, hash('sha256', $rawBody));
-        $eventType = $this->resolveStringField($eventTypeHeader, $payload['type'] ?? null, 'unknown');
+        $eventId = $this->resolveRequiredString($eventIdHeader, $payload['id'] ?? null);
+        $eventType = $this->resolveRequiredString($eventTypeHeader, $payload['type'] ?? null);
 
-        return Cache::lock("pixelforge-webhook-event:{$eventId}", 10)
-            ->block(5, function () use ($payload, $eventId, $eventType): array {
-                $existing = WebhookEvent::query()->where('event_id', $eventId)->first();
+        if ($eventId === null || $eventType === null) {
+            throw new HttpException(400, 'Invalid webhook payload: missing event id or type.');
+        }
 
-                if ($existing !== null && $existing->processed_at !== null) {
-                    return [
-                        'received' => true,
-                        'duplicate' => true,
-                    ];
-                }
+        $generationData = $this->extractGenerationData($payload);
+        $pixelforgeGenerationId = str_starts_with($eventType, 'generation.')
+            ? $this->resolvePixelforgeGenerationId($generationData)
+            : null;
 
-                $generationData = $this->extractGenerationData($payload);
-                $pixelforgeGenerationId = null;
+        try {
+            $event = WebhookEvent::create([
+                'event_id' => $eventId,
+                'event_type' => $eventType,
+                'pixelforge_generation_id' => $pixelforgeGenerationId,
+                'payload' => $payload,
+                'processed_at' => null,
+            ]);
+        } catch (UniqueConstraintViolationException) {
+            return [
+                'received' => true,
+                'duplicate' => true,
+            ];
+        }
 
-                if (str_starts_with($eventType, 'generation.') && $generationData !== []) {
-                    $pixelforgeGenerationId = $this->resolvePixelforgeGenerationId($generationData);
+        ProcessPixelforgeWebhook::dispatch($event->id);
 
-                    if (empty($generationData['status'])) {
-                        $generationData['status'] = Str::after($eventType, 'generation.');
-                    }
+        return ['received' => true];
+    }
 
-                    $generation = $this->resolveGeneration($pixelforgeGenerationId, $generationData);
+    /**
+     * Process a persisted webhook event (executed inside the queued job).
+     */
+    public function processStoredEvent(int $webhookEventId): void
+    {
+        $event = WebhookEvent::query()->find($webhookEventId);
 
-                    if ($generation !== null) {
-                        $this->generationService->updateFromProvider($generation, $generationData);
-                    }
-                }
+        if ($event === null || $event->processed_at !== null) {
+            return;
+        }
 
-                $event = $existing ?? new WebhookEvent(['event_id' => $eventId]);
-                $event->event_type = $eventType;
-                $event->pixelforge_generation_id = $pixelforgeGenerationId;
-                $event->payload = $payload;
-                $event->processed_at = now();
+        $payload = is_array($event->payload) ? $event->payload : [];
+        $eventType = (string) $event->event_type;
+        $generationData = $this->extractGenerationData($payload);
 
-                try {
-                    $event->save();
-                } catch (UniqueConstraintViolationException) {
-                    return [
-                        'received' => true,
-                        'duplicate' => true,
-                    ];
-                }
+        if (str_starts_with($eventType, 'generation.') && $generationData !== []) {
+            $pixelforgeGenerationId = $this->resolvePixelforgeGenerationId($generationData);
 
-                return ['received' => true];
-            });
+            if (empty($generationData['status'])) {
+                $generationData['status'] = Str::after($eventType, 'generation.');
+            }
+
+            $generation = $this->resolveGeneration($pixelforgeGenerationId, $generationData);
+
+            if ($generation !== null) {
+                $this->generationService->updateFromProvider($generation, $generationData);
+            }
+        }
+
+        $event->processed_at = now();
+        $event->save();
     }
 
     /**
@@ -86,25 +102,27 @@ class WebhookService
         if ($rawBody !== '') {
             $decoded = json_decode($rawBody, true);
 
-            if (is_array($decoded)) {
-                return $decoded;
+            if (! is_array($decoded)) {
+                throw new HttpException(400, 'Malformed JSON webhook body.');
             }
+
+            return $decoded;
         }
 
         return $parsedInput;
     }
 
-    private function resolveStringField(mixed $headerValue, mixed $payloadValue, string $fallback): string
+    private function resolveRequiredString(mixed $headerValue, mixed $payloadValue): ?string
     {
-        if (is_string($headerValue) && $headerValue !== '') {
-            return $headerValue;
+        if (is_string($headerValue) && trim($headerValue) !== '') {
+            return trim($headerValue);
         }
 
-        if (is_string($payloadValue) && $payloadValue !== '') {
-            return $payloadValue;
+        if (is_string($payloadValue) && trim($payloadValue) !== '') {
+            return trim($payloadValue);
         }
 
-        return $fallback;
+        return null;
     }
 
     /**
@@ -121,14 +139,7 @@ class WebhookService
 
         $data = $payload['data'] ?? null;
 
-        if (is_array($data)) {
-            return $data;
-        }
-
-        $isEventEnvelope = ($payload['object'] ?? null) === 'event'
-            || (is_string($payload['id'] ?? null) && str_starts_with($payload['id'], 'evt_'));
-
-        return $isEventEnvelope ? [] : $payload;
+        return is_array($data) ? $data : [];
     }
 
     /**

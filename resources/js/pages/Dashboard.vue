@@ -1,49 +1,40 @@
 <script setup lang="ts">
-import {
-    computed,
-    nextTick,
-    onBeforeUnmount,
-    onMounted,
-    ref,
-    watch
-} from 'vue';
-import {
-    AlertCircle,
-    ArrowRight,
-    ImageOff,
-    Loader2,
-    Paperclip,
-    Plus,
-    RefreshCw,
-    ShieldAlert,
-    Sparkles,
-} from 'lucide-vue-next';
-import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
-import { getEcho } from '@/lib/echo';
-import { imageAspectClass } from '@/lib/generation';
-import { calculateLiveEstimate, formatUsdDisplay } from '@/lib/pricing';
-import { setLiveWallet, useWalletState } from '@/composables/useWalletState';
-import type { BreadcrumbItem, Generation, PricingConfig, SharedData } from '@/types';
-import type { GenerationUpdatedBroadcastPayload } from '@/composables/useGenerationRealtime';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Skeleton } from '@/components/ui/skeleton';
-import Trace from '@/components/ai-elements/Trace.vue';
-import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
 import Bubble from '@/components/ai-elements/Bubble.vue';
 import Message from '@/components/ai-elements/Message.vue';
 import PromptInput from '@/components/ai-elements/PromptInput.vue';
 import SuggestionBar from '@/components/ai-elements/SuggestionBar.vue';
+import Trace from '@/components/ai-elements/Trace.vue';
+import ImagePreviewOverlay from '@/components/ImagePreviewOverlay.vue';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
+import { useGenerationRealtimeSubscription } from '@/composables/useGenerationRealtime';
+import { useWalletState } from '@/composables/useWalletState';
 import AppLayout from '@/layouts/AppLayout.vue';
+import { imageAspectClass, isImageExpired } from '@/lib/generation';
+import { calculateLiveEstimate, formatUsdDisplay } from '@/lib/pricing';
+import type { BreadcrumbItem, Generation, PricingConfig, SharedData } from '@/types';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
+import { AlertCircle, ArrowRight, ImageOff, Loader2, Paperclip, Plus, RefreshCw, ShieldAlert, Sparkles } from 'lucide-vue-next';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 
 const props = defineProps<{
     pricing_config: PricingConfig | null;
     pricing_error?: string | null;
+    active_generation?: Generation | null;
 }>();
 
 const page = usePage<SharedData>();
 const { balanceNano } = useWalletState();
+const { getMergedGeneration } = useGenerationRealtimeSubscription(
+    () => page.props.auth?.user?.id,
+    (payload) => {
+        if (currentGeneration.value && payload.generation.id === currentGeneration.value.id) {
+            scrollToBottom();
+        }
+    },
+);
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -61,18 +52,29 @@ const form = useForm({
 
 const showSuggestions = ref(true);
 const quickTopupProcessing = ref(false);
-const expiredImageIds = ref<Record<number, boolean>>({});
+const syncingGeneration = ref(false);
+const failedLoadImageIds = ref<Record<number, boolean>>({});
 const loadedImageIds = ref<Record<number, boolean>>({});
 const scrollerRef = ref<HTMLElement | null>(null);
 const previewOpen = ref(false);
-const currentGeneration = ref<Generation | null>(page.props.flash?.current_generation ?? null);
-
-let subscribedChannel: string | null = null;
+const currentGeneration = ref<Generation | null>(page.props.flash?.current_generation ?? props.active_generation ?? null);
 
 const appName = computed(() => page.props.name);
 const formErrors = computed(() => form.errors as Record<string, string | undefined>);
 const creditsError = computed(() => formErrors.value.credits);
 const pricingError = computed(() => formErrors.value.pricing ?? props.pricing_error ?? null);
+const displayedGeneration = computed(() => getMergedGeneration(currentGeneration.value));
+const promptCodePointLength = computed(() => Array.from(form.prompt.trim()).length);
+
+const isDisplayedImageExpired = computed(() => isImageExpired(displayedGeneration.value?.image_url_expires_at));
+const isDisplayedImageBroken = computed(() => {
+    const gen = displayedGeneration.value;
+    if (!gen) {
+        return false;
+    }
+
+    return Boolean(failedLoadImageIds.value[gen.id]) || isDisplayedImageExpired.value;
+});
 
 const estimate = computed(() => {
     if (!props.pricing_config) {
@@ -84,7 +86,14 @@ const estimate = computed(() => {
 
 const canAffordMaxEstimate = computed(() => (estimate.value ? balanceNano.value >= estimate.value.maxUserCostNano : false));
 
-const canSubmit = computed(() => !form.processing && props.pricing_config !== null && form.prompt.trim().length > 0 && canAffordMaxEstimate.value);
+const canSubmit = computed(
+    () =>
+        !form.processing &&
+        props.pricing_config !== null &&
+        promptCodePointLength.value > 0 &&
+        Array.from(form.prompt).length <= 4000 &&
+        canAffordMaxEstimate.value,
+);
 
 watch(
     () => page.props.flash?.current_generation,
@@ -98,40 +107,13 @@ watch(
 );
 
 watch(
-    () => page.props.auth?.user?.id,
-    (uid) => {
-        teardownChannel();
-
-        if (!uid) {
-            return;
+    () => props.active_generation,
+    (nextActive) => {
+        if (!currentGeneration.value && nextActive) {
+            currentGeneration.value = nextActive;
         }
-
-        const echo = getEcho();
-        if (!echo) {
-            return;
-        }
-
-        const channelName = `App.Models.User.${uid}`;
-        subscribedChannel = channelName;
-
-        echo.private(channelName).listen('.generation.updated', (payload: GenerationUpdatedBroadcastPayload) => {
-            setLiveWallet(payload.wallet);
-
-            if (currentGeneration.value && payload.generation.id === currentGeneration.value.id) {
-                currentGeneration.value = payload.generation;
-                scrollToBottom();
-            }
-        });
     },
-    { immediate: true },
 );
-
-function teardownChannel(): void {
-    if (subscribedChannel) {
-        getEcho()?.leave(subscribedChannel);
-        subscribedChannel = null;
-    }
-}
 
 function scrollToBottom(): void {
     nextTick(() => {
@@ -183,6 +165,25 @@ function submitGeneration(): void {
     });
 }
 
+function syncCurrentGeneration(): void {
+    const gen = displayedGeneration.value;
+    if (!gen || syncingGeneration.value) {
+        return;
+    }
+
+    syncingGeneration.value = true;
+    router.post(
+        route('generations.sync', { generation: gen.id }),
+        {},
+        {
+            preserveScroll: true,
+            onFinish: () => {
+                syncingGeneration.value = false;
+            },
+        },
+    );
+}
+
 function quickAddTenCredits(): void {
     quickTopupProcessing.value = true;
     router.post(
@@ -198,23 +199,20 @@ function quickAddTenCredits(): void {
 }
 
 function markImageLoaded(id: number): void {
+    failedLoadImageIds.value[id] = false;
     loadedImageIds.value[id] = true;
     scrollToBottom();
 }
 
-function markImageExpired(id: number): void {
-    expiredImageIds.value[id] = true;
+function markImageFailed(id: number): void {
+    failedLoadImageIds.value[id] = true;
     loadedImageIds.value[id] = true;
 }
 
 onMounted(() => {
-    if (currentGeneration.value) {
+    if (displayedGeneration.value) {
         scrollToBottom();
     }
-});
-
-onBeforeUnmount(() => {
-    teardownChannel();
 });
 </script>
 
@@ -281,7 +279,7 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- Empty State -->
-                <div v-else-if="!currentGeneration" class="flex flex-1 flex-col items-center justify-center gap-4 text-center">
+                <div v-else-if="!displayedGeneration" class="flex flex-1 flex-col items-center justify-center gap-4 text-center">
                     <div class="flex size-14 items-center justify-center rounded-2xl border bg-primary/10 text-primary shadow-sm">
                         <Sparkles class="size-7" />
                     </div>
@@ -297,25 +295,25 @@ onBeforeUnmount(() => {
                 <!-- Single Active / Just-Generated Turn -->
                 <div v-else class="space-y-4">
                     <!-- User Prompt Turn -->
-                    <Message align="end" author="You" :timestamp="currentGeneration.created_at">
+                    <Message align="end" author="You" :timestamp="displayedGeneration.created_at">
                         <Bubble align="end">
-                            <p class="whitespace-pre-wrap">{{ currentGeneration.prompt }}</p>
+                            <p class="whitespace-pre-wrap">{{ displayedGeneration.prompt }}</p>
                             <div class="mt-2.5 flex flex-wrap items-center gap-1.5">
                                 <Badge
                                     variant="secondary"
                                     class="border-transparent bg-primary-foreground/15 font-mono text-[10px] text-primary-foreground"
                                 >
-                                    {{ currentGeneration.size }}
+                                    {{ displayedGeneration.size }}
                                 </Badge>
                                 <Badge
                                     variant="secondary"
                                     class="border-transparent bg-primary-foreground/15 font-mono text-[10px] capitalize text-primary-foreground"
                                 >
-                                    {{ currentGeneration.quality }}
+                                    {{ displayedGeneration.quality }}
                                 </Badge>
                                 <a
-                                    v-for="(refUrl, idx) in currentGeneration.reference_images"
-                                    :key="`${currentGeneration.id}-ref-${idx}`"
+                                    v-for="(refUrl, idx) in displayedGeneration.reference_images"
+                                    :key="`${displayedGeneration.id}-ref-${idx}`"
                                     :href="refUrl"
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -332,30 +330,30 @@ onBeforeUnmount(() => {
                     <Message
                         align="start"
                         :author="`${appName} AI`"
-                        :status="currentGeneration.status"
-                        :timestamp="currentGeneration.completed_at ?? currentGeneration.created_at"
+                        :status="displayedGeneration.status"
+                        :timestamp="displayedGeneration.completed_at ?? displayedGeneration.created_at"
                     >
                         <div class="w-full space-y-2.5">
                             <!-- Collapsible Trace / Reasoning Bar -->
-                            <Trace :generation="currentGeneration" />
+                            <Trace :generation="displayedGeneration" />
 
                             <!-- Image / Active Shimmer / Error Output -->
                             <div
-                                v-if="currentGeneration.status === 'succeeded'"
+                                v-if="displayedGeneration.status === 'succeeded'"
                                 class="w-full max-w-[320px] overflow-hidden rounded-xl border bg-card shadow-sm"
                             >
                                 <button
-                                    v-if="currentGeneration.image_url && !expiredImageIds[currentGeneration.id]"
+                                    v-if="displayedGeneration.image_url && !isDisplayedImageBroken"
                                     type="button"
                                     :class="[
-                                        imageAspectClass(currentGeneration.size),
+                                        imageAspectClass(displayedGeneration.size),
                                         'group relative block w-full cursor-zoom-in bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
                                     ]"
                                     aria-label="Preview generated image"
                                     @click="previewOpen = true"
                                 >
                                     <div
-                                        v-if="!loadedImageIds[currentGeneration.id]"
+                                        v-if="!loadedImageIds[displayedGeneration.id]"
                                         class="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 bg-muted/40"
                                     >
                                         <Skeleton class="absolute inset-0 rounded-none opacity-60" />
@@ -363,53 +361,72 @@ onBeforeUnmount(() => {
                                         <span class="relative z-10 text-[11px] font-medium text-muted-foreground">Loading image...</span>
                                     </div>
                                     <img
-                                        :src="currentGeneration.image_url"
-                                        :alt="currentGeneration.prompt"
+                                        :src="displayedGeneration.image_url"
+                                        :alt="displayedGeneration.prompt"
                                         class="h-full w-full object-contain transition-all duration-200 group-hover:scale-[1.01]"
-                                        :class="loadedImageIds[currentGeneration.id] ? 'opacity-100' : 'opacity-0'"
-                                        @load="markImageLoaded(currentGeneration.id)"
-                                        @error="markImageExpired(currentGeneration.id)"
+                                        :class="loadedImageIds[displayedGeneration.id] ? 'opacity-100' : 'opacity-0'"
+                                        @load="markImageLoaded(displayedGeneration.id)"
+                                        @error="markImageFailed(displayedGeneration.id)"
                                     />
                                 </button>
                                 <div
                                     v-else
-                                    :class="[imageAspectClass(currentGeneration.size), 'flex flex-col items-center justify-center p-6 text-center']"
+                                    :class="[imageAspectClass(displayedGeneration.size), 'flex flex-col items-center justify-center p-6 text-center']"
                                 >
                                     <ImageOff class="size-8 text-muted-foreground" />
-                                    <p class="mt-2 text-xs font-medium">Signed image URL expired (24h TTL)</p>
-                                    <p class="mt-1 text-[11px] text-muted-foreground">Pixelforge signed URLs remain valid for 24 hours.</p>
+                                    <p class="mt-2 text-xs font-medium">
+                                        {{ isDisplayedImageExpired ? 'Signed image URL expired (24h TTL)' : 'Image could not be loaded' }}
+                                    </p>
+                                    <p class="mt-1 text-[11px] text-muted-foreground">
+                                        {{
+                                            isDisplayedImageExpired
+                                                ? 'Pixelforge signed URLs remain valid for 24 hours.'
+                                                : 'The image host may be temporarily unreachable.'
+                                        }}
+                                    </p>
                                 </div>
                             </div>
 
                             <div
-                                v-else-if="currentGeneration.status === 'queued' || currentGeneration.status === 'processing'"
+                                v-else-if="displayedGeneration.status === 'queued' || displayedGeneration.status === 'processing'"
                                 :class="[
-                                    imageAspectClass(currentGeneration.size),
+                                    imageAspectClass(displayedGeneration.size),
                                     'relative flex w-full max-w-[320px] flex-col items-center justify-center overflow-hidden rounded-xl border bg-muted/30 p-6 text-center',
                                 ]"
                             >
                                 <Skeleton class="absolute inset-0 rounded-none opacity-60" />
-                                <div class="relative z-10 flex flex-col items-center gap-2">
+                                <div class="relative z-10 flex flex-col items-center gap-2.5">
                                     <Loader2 class="size-7 animate-spin text-primary" />
                                     <p class="text-xs font-semibold">
-                                        {{ currentGeneration.status === 'queued' ? 'Queued with Pixelforge...' : 'Generating image...' }}
+                                        {{ displayedGeneration.status === 'queued' ? 'Queued with Pixelforge...' : 'Generating image...' }}
                                     </p>
                                     <p
-                                        v-if="currentGeneration.error_message"
+                                        v-if="displayedGeneration.error_message"
                                         class="max-w-[240px] rounded-md bg-background/85 px-2.5 py-1 text-[11px] text-amber-700 dark:text-amber-300"
                                     >
-                                        {{ currentGeneration.error_message }}
+                                        {{ displayedGeneration.error_message }}
                                     </p>
+                                    <Button
+                                        type="button"
+                                        size="sm"
+                                        variant="outline"
+                                        class="mt-1 h-7 bg-background/90 text-[11px]"
+                                        :disabled="syncingGeneration"
+                                        @click="syncCurrentGeneration"
+                                    >
+                                        <RefreshCw class="size-3" :class="{ 'animate-spin': syncingGeneration }" />
+                                        Sync status
+                                    </Button>
                                 </div>
                             </div>
 
                             <Alert v-else variant="destructive" class="max-w-md">
                                 <AlertCircle class="size-4" />
                                 <AlertTitle class="font-mono text-xs">
-                                    {{ currentGeneration.error_code ?? 'GENERATION_FAILED' }}
+                                    {{ displayedGeneration.error_code ?? 'GENERATION_FAILED' }}
                                 </AlertTitle>
                                 <AlertDescription class="text-xs">
-                                    {{ currentGeneration.error_message ?? 'Generation failed. Held credits were released ($0.00 charged).' }}
+                                    {{ displayedGeneration.error_message ?? 'Generation failed. Held credits were released ($0.00 charged).' }}
                                 </AlertDescription>
                             </Alert>
                         </div>
@@ -484,9 +501,9 @@ onBeforeUnmount(() => {
 
             <ImagePreviewOverlay
                 v-model:open="previewOpen"
-                :image-url="currentGeneration?.image_url ?? null"
-                :prompt="currentGeneration?.prompt"
-                :filename="currentGeneration?.pixelforge_id ?? undefined"
+                :image-url="displayedGeneration?.image_url ?? null"
+                :prompt="displayedGeneration?.prompt"
+                :filename="displayedGeneration?.pixelforge_id ?? undefined"
             />
         </div>
     </AppLayout>
