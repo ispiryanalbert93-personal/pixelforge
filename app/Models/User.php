@@ -68,16 +68,6 @@ class User extends Authenticatable
     }
 
     /**
-     * Determine whether the user has any queued or processing generations.
-     */
-    public function hasActiveGenerations(): bool
-    {
-        return $this->generations()
-            ->whereIn('status', [GenerationStatus::Queued, GenerationStatus::Processing])
-            ->exists();
-    }
-
-    /**
      * @return HasOne<Wallet, $this>
      */
     public function wallet(): HasOne
@@ -102,5 +92,15 @@ class User extends Authenticatable
     public function walletTransactions(): HasMany
     {
         return $this->hasMany(WalletTransaction::class);
+    }
+
+    /**
+     * Determine whether the user has any queued or processing generations.
+     */
+    public function hasActiveGenerations(): bool
+    {
+        return $this->generations()
+            ->whereIn('status', [GenerationStatus::Queued, GenerationStatus::Processing])
+            ->exists();
     }
 }
