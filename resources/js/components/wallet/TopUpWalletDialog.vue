@@ -25,13 +25,14 @@ const emit = defineEmits<{
 }>();
 
 const page = usePage<SharedData>();
-const appName = computed(() => page.props.name);
+
+const presetAmounts = [5, 10, 25, 50];
 
 const topupForm = useForm({
     amount_usd: 10,
 });
 
-const presetAmounts = [5, 10, 25, 50];
+const appName = computed(() => page.props.name);
 
 watch(
     () => props.open,

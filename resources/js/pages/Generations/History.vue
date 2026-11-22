@@ -37,6 +37,14 @@ const props = defineProps<{
     statusOptions: StatusFilterOption[];
 }>();
 
+const page = usePage<SharedData>();
+const { generations } = useGenerationRealtime(
+    () => props.generations.data,
+    undefined,
+    () => props.has_active_generations,
+    () => page.props.auth?.user?.id,
+);
+
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'Generation History',
@@ -44,7 +52,6 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
-const page = usePage<SharedData>();
 const isReloading = ref(false);
 const previewGeneration = ref<GenerationHistoryRow | null>(null);
 
@@ -57,22 +64,15 @@ const previewOpen = computed({
     },
 });
 
-const columns = createGenerationColumns((generation) => {
-    previewGeneration.value = generation;
-});
-
-const { generations } = useGenerationRealtime(
-    () => props.generations.data,
-    undefined,
-    () => props.has_active_generations,
-    () => page.props.auth?.user?.id,
-);
-
 const showEmptyState = computed(() => {
     const status = props.filters?.status ?? 'all';
     const search = props.filters?.search ?? '';
 
     return status === 'all' && search === '' && props.generations.meta.total === 0;
+});
+
+const columns = createGenerationColumns((generation) => {
+    previewGeneration.value = generation;
 });
 
 function refreshHistory(): void {

@@ -15,12 +15,13 @@ const props = defineProps<{
     canAfford: boolean;
 }>();
 
+const maxChars = 4000;
+const circumference = 2 * Math.PI * 7;
+
 const open = ref(false);
 let hoverCloseTimer: ReturnType<typeof setTimeout> | null = null;
 
-const maxChars = 4000;
 const progressRatio = computed(() => Math.min(1, props.promptLength / maxChars));
-const circumference = 2 * Math.PI * 7;
 const strokeDashoffset = computed(() => circumference * (1 - progressRatio.value));
 
 function handleMouseEnter(): void {

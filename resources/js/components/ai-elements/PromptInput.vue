@@ -11,10 +11,6 @@ import { usePage } from '@inertiajs/vue3';
 import { ArrowUp, FlaskConical, Loader2, Maximize2, Paperclip, Plus, SlidersHorizontal, X } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
 
-const page = usePage<SharedData>();
-const appName = computed(() => page.props.name);
-const isDevelopment = computed(() => Boolean(page.props.is_development));
-
 const props = defineProps<{
     prompt: string;
     size: string;
@@ -38,9 +34,13 @@ const emit = defineEmits<{
     (e: 'submit'): void;
 }>();
 
+const page = usePage<SharedData>();
+
 const showRefInput = ref(false);
 const draftRefUrl = ref('');
 
+const appName = computed(() => page.props.name);
+const isDevelopment = computed(() => Boolean(page.props.is_development));
 const canAddMoreRefs = computed(() => props.referenceImages.length < props.pricingConfig.max_reference_images);
 
 function displayRefLabel(url: string): string {

@@ -45,7 +45,6 @@ const props = defineProps<{
 }>();
 
 const page = usePage<SharedData>();
-const filterErrors = computed(() => (page.props.errors ?? {}) as Record<string, string | undefined>);
 
 const breadcrumbs: BreadcrumbItem[] = [
     {
@@ -54,11 +53,19 @@ const breadcrumbs: BreadcrumbItem[] = [
     },
 ];
 
+const startDate = ref(props.report.filters.start_date ?? props.report.filters.effective_start_date ?? '');
+const endDate = ref(props.report.filters.end_date ?? props.report.filters.effective_end_date ?? '');
+
+const filterErrors = computed(() => (page.props.errors ?? {}) as Record<string, string | undefined>);
 const defaultStartDate = computed(() => props.report.filters.effective_start_date ?? '');
 const defaultEndDate = computed(() => props.report.filters.effective_end_date ?? '');
-
-const startDate = ref(props.report.filters.start_date ?? defaultStartDate.value);
-const endDate = ref(props.report.filters.end_date ?? defaultEndDate.value);
+const hasCustomFilter = computed(
+    () =>
+        Boolean(props.report.filters.start_date || props.report.filters.end_date) ||
+        startDate.value !== defaultStartDate.value ||
+        endDate.value !== defaultEndDate.value,
+);
+const total = computed(() => props.report.total);
 
 watch(
     () => props.report.filters,
@@ -67,15 +74,6 @@ watch(
         endDate.value = filters.end_date ?? filters.effective_end_date ?? '';
     },
 );
-
-const hasCustomFilter = computed(
-    () =>
-        Boolean(props.report.filters.start_date || props.report.filters.end_date) ||
-        startDate.value !== defaultStartDate.value ||
-        endDate.value !== defaultEndDate.value,
-);
-
-const total = computed(() => props.report.total);
 
 function applyFilters(): void {
     router.get(

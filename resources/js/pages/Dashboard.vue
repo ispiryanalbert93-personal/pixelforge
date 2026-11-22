@@ -42,16 +42,15 @@ const props = defineProps<{
     pricing_error?: string | null;
 }>();
 
+const page = usePage<SharedData>();
+const { balanceNano } = useWalletState();
+
 const breadcrumbs: BreadcrumbItem[] = [
     {
         title: 'AI Image Studio',
         href: '/dashboard',
     },
 ];
-
-const page = usePage<SharedData>();
-const appName = computed(() => page.props.name);
-const { balanceNano } = useWalletState();
 
 const form = useForm({
     prompt: '',
@@ -66,17 +65,26 @@ const expiredImageIds = ref<Record<number, boolean>>({});
 const loadedImageIds = ref<Record<number, boolean>>({});
 const scrollerRef = ref<HTMLElement | null>(null);
 const previewOpen = ref(false);
-
 const currentGeneration = ref<Generation | null>(page.props.flash?.current_generation ?? null);
 
 let subscribedChannel: string | null = null;
 
-function teardownChannel(): void {
-    if (subscribedChannel) {
-        getEcho()?.leave(subscribedChannel);
-        subscribedChannel = null;
+const appName = computed(() => page.props.name);
+const formErrors = computed(() => form.errors as Record<string, string | undefined>);
+const creditsError = computed(() => formErrors.value.credits);
+const pricingError = computed(() => formErrors.value.pricing ?? props.pricing_error ?? null);
+
+const estimate = computed(() => {
+    if (!props.pricing_config) {
+        return null;
     }
-}
+
+    return calculateLiveEstimate(form.prompt, form.size, form.quality, form.reference_images, props.pricing_config);
+});
+
+const canAffordMaxEstimate = computed(() => (estimate.value ? balanceNano.value >= estimate.value.maxUserCostNano : false));
+
+const canSubmit = computed(() => !form.processing && props.pricing_config !== null && form.prompt.trim().length > 0 && canAffordMaxEstimate.value);
 
 watch(
     () => page.props.flash?.current_generation,
@@ -118,25 +126,12 @@ watch(
     { immediate: true },
 );
 
-onBeforeUnmount(() => {
-    teardownChannel();
-});
-
-const formErrors = computed(() => form.errors as Record<string, string | undefined>);
-const creditsError = computed(() => formErrors.value.credits);
-const pricingError = computed(() => formErrors.value.pricing ?? props.pricing_error ?? null);
-
-const estimate = computed(() => {
-    if (!props.pricing_config) {
-        return null;
+function teardownChannel(): void {
+    if (subscribedChannel) {
+        getEcho()?.leave(subscribedChannel);
+        subscribedChannel = null;
     }
-
-    return calculateLiveEstimate(form.prompt, form.size, form.quality, form.reference_images, props.pricing_config);
-});
-
-const canAffordMaxEstimate = computed(() => (estimate.value ? balanceNano.value >= estimate.value.maxUserCostNano : false));
-
-const canSubmit = computed(() => !form.processing && props.pricing_config !== null && form.prompt.trim().length > 0 && canAffordMaxEstimate.value);
+}
 
 function scrollToBottom(): void {
     nextTick(() => {
@@ -148,12 +143,6 @@ function scrollToBottom(): void {
         }
     });
 }
-
-onMounted(() => {
-    if (currentGeneration.value) {
-        scrollToBottom();
-    }
-});
 
 function selectPromptSuggestion(text: string): void {
     form.prompt = text;
@@ -217,6 +206,16 @@ function markImageExpired(id: number): void {
     expiredImageIds.value[id] = true;
     loadedImageIds.value[id] = true;
 }
+
+onMounted(() => {
+    if (currentGeneration.value) {
+        scrollToBottom();
+    }
+});
+
+onBeforeUnmount(() => {
+    teardownChannel();
+});
 </script>
 
 <template>

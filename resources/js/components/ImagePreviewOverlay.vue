@@ -16,6 +16,24 @@ const emit = defineEmits<{
 
 const isDownloading = ref(false);
 
+watch(
+    () => props.open,
+    (isOpen) => {
+        if (typeof window === 'undefined' || typeof document === 'undefined') {
+            return;
+        }
+
+        if (isOpen) {
+            window.addEventListener('keydown', handleKeydown);
+            document.body.style.overflow = 'hidden';
+        } else {
+            window.removeEventListener('keydown', handleKeydown);
+            document.body.style.overflow = '';
+        }
+    },
+    { immediate: true },
+);
+
 function close(): void {
     emit('update:open', false);
 }
@@ -65,24 +83,6 @@ async function downloadImage(): Promise<void> {
         isDownloading.value = false;
     }
 }
-
-watch(
-    () => props.open,
-    (isOpen) => {
-        if (typeof window === 'undefined' || typeof document === 'undefined') {
-            return;
-        }
-
-        if (isOpen) {
-            window.addEventListener('keydown', handleKeydown);
-            document.body.style.overflow = 'hidden';
-        } else {
-            window.removeEventListener('keydown', handleKeydown);
-            document.body.style.overflow = '';
-        }
-    },
-    { immediate: true },
-);
 
 onBeforeUnmount(() => {
     if (typeof window !== 'undefined') {

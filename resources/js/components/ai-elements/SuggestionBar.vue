@@ -17,7 +17,6 @@ const emit = defineEmits<{
 }>();
 
 const page = usePage<SharedData>();
-const isDevelopment = computed(() => Boolean(page.props.is_development));
 
 const samplePrompts = [
     'Cyberpunk rainy Tokyo alley at midnight with neon reflections',
@@ -33,6 +32,8 @@ const testKeywords = [
     { tag: '[overloaded]', description: 'Simulates transient 503 overload / retryable provider error' },
     { tag: '[blocked]', description: 'Simulates safety/policy block (rejected & $0.00 billed)' },
 ];
+
+const isDevelopment = computed(() => Boolean(page.props.is_development));
 
 function isKeywordActive(tag: string): boolean {
     return (props.prompt ?? '').toLowerCase().includes(tag.toLowerCase());

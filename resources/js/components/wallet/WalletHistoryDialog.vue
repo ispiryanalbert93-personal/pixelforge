@@ -59,6 +59,18 @@ const error = ref<string | null>(null);
 
 let abortController: AbortController | null = null;
 
+watch(
+    () => props.open,
+    (isOpen) => {
+        if (isOpen) {
+            void fetchTransactions(1);
+        } else {
+            abortController?.abort();
+            abortController = null;
+        }
+    },
+);
+
 async function fetchTransactions(pageNumber = 1): Promise<void> {
     abortController?.abort();
     const controller = new AbortController();
@@ -102,22 +114,6 @@ async function fetchTransactions(pageNumber = 1): Promise<void> {
     }
 }
 
-watch(
-    () => props.open,
-    (isOpen) => {
-        if (isOpen) {
-            void fetchTransactions(1);
-        } else {
-            abortController?.abort();
-            abortController = null;
-        }
-    },
-);
-
-onBeforeUnmount(() => {
-    abortController?.abort();
-});
-
 function transactionBadgeClass(type: WalletTransactionType): string {
     switch (type) {
         case 'topup':
@@ -130,6 +126,10 @@ function transactionBadgeClass(type: WalletTransactionType): string {
             return 'border-slate-500/30 bg-slate-500/15 text-slate-700 dark:text-slate-300';
     }
 }
+
+onBeforeUnmount(() => {
+    abortController?.abort();
+});
 </script>
 
 <template>

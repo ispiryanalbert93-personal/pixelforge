@@ -16,7 +16,6 @@ import NavMain from '@/components/NavMain.vue';
 import NavUser from '@/components/NavUser.vue';
 
 const page = usePage<SharedData>();
-const appName = computed(() => page.props.name);
 
 const adminNavItems: NavItem[] = [
     {
@@ -25,6 +24,8 @@ const adminNavItems: NavItem[] = [
         icon: BarChart3,
     },
 ];
+
+const appName = computed(() => page.props.name);
 </script>
 
 <template>
